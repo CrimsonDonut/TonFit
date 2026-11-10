@@ -1,9 +1,9 @@
 import 'package:go_router/go_router.dart';
 
 import '../features/dashboard/dashboard_screen.dart';
-import '../features/day/day_screen.dart';
 import '../features/session/add_exercise_screen.dart';
 import '../features/session/choose_program_screen.dart';
+import '../features/year/year_screen.dart';
 
 final appRouter = GoRouter(
   routes: [
@@ -22,9 +22,9 @@ final appRouter = GoRouter(
       ),
     ),
     GoRoute(
-      path: '/day/:day',
-      builder: (context, state) => DayScreen(
-        day: int.parse(state.pathParameters['day']!),
+      path: '/year/:year',
+      builder: (context, state) => YearScreen(
+        year: int.parse(state.pathParameters['year']!),
       ),
     ),
   ],

@@ -51,8 +51,5 @@ final todayProvider = NotifierProvider<TodayNotifier, int>(TodayNotifier.new);
 /// Weight unit. A settings screen will change this later.
 final weightUnitProvider = StateProvider<WeightUnit>((ref) => WeightUnit.kg);
 
-/// Heatmap year; null means the current year.
-final selectedYearProvider = StateProvider<int?>((ref) => null);
-
 /// Whether today's row on the dashboard is expanded.
 final todayExpandedProvider = StateProvider<bool>((ref) => true);

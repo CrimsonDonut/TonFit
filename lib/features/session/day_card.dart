@@ -6,8 +6,11 @@ import '../../core/format.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/database/app_database.dart';
 import '../../data/database/tables.dart';
 import '../../data/queries/workout_queries.dart';
+import '../../data/repositories/session_repository.dart';
+import '../../domain/epoch_day.dart';
 import '../../domain/progress.dart';
 import '../../domain/weight.dart';
 import 'add_set_sheet.dart';
@@ -56,6 +59,47 @@ class DayCard extends ConsumerWidget {
 
   final DayDetail detail;
 
+  /// Pick time in, then time out. A time out at or before the time in is taken
+  /// to be after midnight (the next day).
+  Future<void> _editTimes(
+    BuildContext context,
+    WidgetRef ref,
+    Session session,
+  ) async {
+    final date = EpochDay.toDate(session.day);
+
+    TimeOfDay initial(int? seconds, TimeOfDay fallback) => seconds == null
+        ? fallback
+        : TimeOfDay.fromDateTime(
+            DateTime.fromMillisecondsSinceEpoch(seconds * 1000));
+
+    final timeIn = await showTimePicker(
+      context: context,
+      initialTime: initial(session.timeIn, const TimeOfDay(hour: 18, minute: 0)),
+      helpText: 'TIME IN',
+    );
+    if (timeIn == null || !context.mounted) return;
+
+    final timeOut = await showTimePicker(
+      context: context,
+      initialTime: initial(session.timeOut, timeIn),
+      helpText: 'TIME OUT',
+    );
+    if (timeOut == null) return;
+
+    final start =
+        DateTime(date.year, date.month, date.day, timeIn.hour, timeIn.minute);
+    var end =
+        DateTime(date.year, date.month, date.day, timeOut.hour, timeOut.minute);
+    if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
+
+    await ref.read(sessionRepositoryProvider).setTimes(
+          sessionId: session.id,
+          timeIn: start.millisecondsSinceEpoch ~/ 1000,
+          timeOut: end.millisecondsSinceEpoch ~/ 1000,
+        );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
@@ -87,11 +131,25 @@ class DayCard extends ConsumerWidget {
             ),
           ],
         ),
-        if (timeLine != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(timeLine, style: text.bodySmall),
+        InkWell(
+          onTap: () => _editTimes(context, ref, session),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    timeLine ?? 'Add time in / out',
+                    style: text.bodySmall,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(Icons.edit_outlined,
+                    size: 14, color: AppColors.textMuted),
+              ],
+            ),
           ),
+        ),
         const SizedBox(height: 12),
         const Divider(),
         for (final view in detail.logs) ...[

@@ -12,7 +12,9 @@ import '../../data/queries/workout_queries.dart';
 import '../../domain/epoch_day.dart';
 import '../../domain/heatmap.dart';
 
-/// "ANNUAL LOG": year switcher, the heatmap grid and a Less/More legend.
+/// "ANNUAL LOG": the current year's heatmap (display only) and links to each
+/// year's session list. Cells are too small for fingers, so the heatmap itself
+/// is not interactive.
 class HeatmapSection extends ConsumerWidget {
   const HeatmapSection({super.key});
 
@@ -21,9 +23,8 @@ class HeatmapSection extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
     final today = ref.watch(todayProvider);
     final currentYear = EpochDay.toDate(today).year;
-    final year = ref.watch(selectedYearProvider) ?? currentYear;
-    final data = ref.watch(heatmapProvider(year));
-    final firstYear = data.valueOrNull?.firstYear ?? year;
+    final data = ref.watch(heatmapProvider(currentYear));
+    final firstYear = data.valueOrNull?.firstYear ?? currentYear;
     final years = [for (var y = firstYear; y <= currentYear; y++) y];
 
     return Column(
@@ -33,16 +34,14 @@ class HeatmapSection extends ConsumerWidget {
           children: [
             Text('ANNUAL LOG', style: text.labelSmall),
             const Spacer(),
-            for (var i = 0; i < years.length; i++) ...[
-              if (i > 0)
-                Text(' · ', style: text.bodySmall),
+            for (final y in years)
               InkWell(
-                onTap: () => ref.read(selectedYearProvider.notifier).state = years[i],
+                onTap: () => context.push('/year/$y'),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                   child: Text(
-                    '${years[i]}',
-                    style: years[i] == year
+                    '$y',
+                    style: y == currentYear
                         ? text.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                             decoration: TextDecoration.underline,
@@ -52,48 +51,53 @@ class HeatmapSection extends ConsumerWidget {
                   ),
                 ),
               ),
-            ],
+            const Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
           ],
         ),
-        const SizedBox(height: 8),
         data.when(
           loading: () => const SizedBox(height: 120),
           error: (e, _) => Text('Could not load heatmap: $e'),
-          data: (d) => HeatmapGrid(
-            data: d,
-            todayDay: today,
-            onTapDay: (day) => context.push('/day/$day'),
-          ),
+          data: (d) => HeatmapGrid(data: d, todayDay: today),
         ),
         const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerRight,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Less', style: text.bodySmall),
-              const SizedBox(width: 6),
-              for (final c in AppColors.heatmap)
-                Container(
-                  width: 10,
-                  height: 10,
-                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                  decoration: BoxDecoration(
-                    color: c,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              const SizedBox(width: 6),
-              Text('More', style: text.bodySmall),
-            ],
-          ),
-        ),
+        const HeatmapLegend(),
       ],
     );
   }
 }
 
-/// Geometry shared by painting and tap detection.
+class HeatmapLegend extends StatelessWidget {
+  const HeatmapLegend({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Less', style: text.bodySmall),
+          const SizedBox(width: 6),
+          for (final c in AppColors.heatmap)
+            Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+              decoration: BoxDecoration(
+                color: c,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          const SizedBox(width: 6),
+          Text('More', style: text.bodySmall),
+        ],
+      ),
+    );
+  }
+}
+
+/// Geometry for painting the grid.
 class _Layout {
   _Layout._({
     required this.year,
@@ -132,50 +136,24 @@ class _Layout {
 
   double get gap => math.max(1.0, cell * 0.18);
   double get height => topPad + 7 * cell;
-
-  /// The day under [p], or null outside the grid.
-  int? dayAt(Offset p) {
-    final x = p.dx - leftPad;
-    final y = p.dy - topPad;
-    if (x < 0 || y < 0) return null;
-    final col = (x / cell).floor();
-    final row = (y / cell).floor();
-    if (row > 6 || col >= cols) return null;
-    final day = firstWeek + col * 7 + row;
-    if (day < firstDay || day > lastDay) return null;
-    return day;
-  }
 }
 
+/// The heatmap itself: painted on a single canvas, display only.
 class HeatmapGrid extends StatelessWidget {
-  const HeatmapGrid({
-    super.key,
-    required this.data,
-    required this.todayDay,
-    required this.onTapDay,
-  });
+  const HeatmapGrid({super.key, required this.data, required this.todayDay});
 
   final HeatmapData data;
   final int todayDay;
-  final void Function(int day) onTapDay;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final layout = _Layout(data.year, constraints.maxWidth);
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (details) {
-            final day = layout.dayAt(details.localPosition);
-            // Only days that have a session open something.
-            if (day != null && data.setCounts.containsKey(day)) onTapDay(day);
-          },
-          child: RepaintBoundary(
-            child: CustomPaint(
-              size: Size(constraints.maxWidth, layout.height),
-              painter: _HeatmapPainter(layout, data, todayDay),
-            ),
+        return RepaintBoundary(
+          child: CustomPaint(
+            size: Size(constraints.maxWidth, layout.height),
+            painter: _HeatmapPainter(layout, data, todayDay),
           ),
         );
       },

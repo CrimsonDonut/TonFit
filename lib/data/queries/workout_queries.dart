@@ -53,6 +53,33 @@ class HeatmapData {
   final Map<int, int> setCounts;
 }
 
+/// One row of the year list: a day with a session, or a rest day.
+class YearDay {
+  const YearDay({
+    required this.day,
+    required this.sessionId,
+    required this.programName,
+    required this.summaryPct,
+    required this.setCount,
+    required this.isRest,
+  });
+  final int day;
+  final int? sessionId;
+  final String? programName;
+  final int? summaryPct;
+  final int setCount;
+  final bool isRest;
+}
+
+class YearData {
+  const YearData({required this.year, required this.firstYear, required this.days});
+  final int year;
+  final int firstYear;
+
+  /// Newest first. Only summaries: sets load when a day is expanded.
+  final List<YearDay> days;
+}
+
 class ProgramView {
   const ProgramView({required this.program, required this.exerciseCount});
   final Program program;
@@ -171,6 +198,15 @@ class WorkoutQueries {
 
   // --- heatmap ---
 
+  /// First year with any data, or [fallback] when there is none.
+  Future<int> _firstYear(int fallback) async {
+    final minDay = db.daySummaries.day.min();
+    final row =
+        await (db.selectOnly(db.daySummaries)..addColumns([minDay])).getSingle();
+    final m = row.read(minDay);
+    return m == null ? fallback : EpochDay.toDate(m).year;
+  }
+
   Future<HeatmapData> loadHeatmap(int year) async {
     final start = EpochDay.fromDate(DateTime(year, 1, 1));
     final end = EpochDay.fromDate(DateTime(year, 12, 31));
@@ -179,20 +215,54 @@ class WorkoutQueries {
               t.day.isBetweenValues(start, end) & t.sessionId.isNotNull()))
         .get();
 
-    final minDay = db.daySummaries.day.min();
-    final first =
-        await (db.selectOnly(db.daySummaries)..addColumns([minDay])).getSingle();
-    final m = first.read(minDay);
-
     return HeatmapData(
       year: year,
-      firstYear: m == null ? year : EpochDay.toDate(m).year,
+      firstYear: await _firstYear(year),
       setCounts: {for (final r in rows) r.day: r.setCount},
     );
   }
 
   Stream<HeatmapData> watchHeatmap(int year) =>
       _watch(() => loadHeatmap(year), [db.daySummaries]);
+
+  // --- year list ---
+
+  Future<YearData> loadYear(int year) async {
+    final start = EpochDay.fromDate(DateTime(year, 1, 1));
+    final end = EpochDay.fromDate(DateTime(year, 12, 31));
+    final query = db.select(db.daySummaries).join([
+      leftOuterJoin(
+        db.sessions,
+        db.sessions.id.equalsExp(db.daySummaries.sessionId),
+      ),
+      leftOuterJoin(
+        db.programs,
+        db.programs.id.equalsExp(db.sessions.programId),
+      ),
+    ])
+      ..where(db.daySummaries.day.isBetweenValues(start, end))
+      ..orderBy([OrderingTerm.desc(db.daySummaries.day)]);
+
+    final rows = await query.get();
+    final days = <YearDay>[];
+    for (final r in rows) {
+      final summary = r.readTable(db.daySummaries);
+      days.add(YearDay(
+        day: summary.day,
+        sessionId: summary.sessionId,
+        programName: r.readTableOrNull(db.programs)?.name,
+        summaryPct: r.readTableOrNull(db.sessions)?.summaryPct,
+        setCount: summary.setCount,
+        isRest: summary.isRest,
+      ));
+    }
+    return YearData(year: year, firstYear: await _firstYear(year), days: days);
+  }
+
+  Stream<YearData> watchYear(int year) => _watch(
+        () => loadYear(year),
+        [db.daySummaries, db.sessions, db.programs],
+      );
 
   // --- streak ---
 
@@ -277,6 +347,10 @@ final dayDetailProvider = StreamProvider.family<DayDetail?, int>(
 
 final heatmapProvider = StreamProvider.family<HeatmapData, int>(
   (ref, year) => ref.watch(workoutQueriesProvider).watchHeatmap(year),
+);
+
+final yearDataProvider = StreamProvider.family<YearData, int>(
+  (ref, year) => ref.watch(workoutQueriesProvider).watchYear(year),
 );
 
 final streakProvider = StreamProvider<StreakState>(
