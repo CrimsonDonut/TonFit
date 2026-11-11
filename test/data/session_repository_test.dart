@@ -71,6 +71,51 @@ Future<List<Suggestion>> suggestionsFor(int sessionId) =>
     (db.select(db.suggestions)..where((t) => t.sessionId.equals(sessionId)))
         .get();
 
+Future<Map<String, Object?>> snapshot() async => {
+      'logs': [
+        for (final r in await (db.select(db.exerciseLogs)
+              ..orderBy([(t) => OrderingTerm.asc(t.id)]))
+            .get())
+          r.toJson(),
+      ],
+      'sessions': [
+        for (final r in await (db.select(db.sessions)
+              ..orderBy([(t) => OrderingTerm.asc(t.id)]))
+            .get())
+          r.toJson(),
+      ],
+      'days': [
+        for (final r in await (db.select(db.daySummaries)
+              ..orderBy([(t) => OrderingTerm.asc(t.day)]))
+            .get())
+          r.toJson(),
+      ],
+      'weeks': [
+        for (final r in await (db.select(db.weekSummaries)
+              ..orderBy([(t) => OrderingTerm.asc(t.weekStart)]))
+            .get())
+          r.toJson(),
+      ],
+      'stats': [
+        for (final r in await (db.select(db.exerciseStats)
+              ..orderBy([(t) => OrderingTerm.asc(t.exerciseId)]))
+            .get())
+          r.toJson(),
+      ],
+      'streak': (await db.select(db.streakStates).getSingle()).toJson(),
+      // Suggestion ids are regenerated, so compare their content only.
+      'suggestions': [
+        for (final r in await (db.select(db.suggestions)
+              ..orderBy([
+                (t) => OrderingTerm.asc(t.sessionId),
+                (t) => OrderingTerm.asc(t.priority),
+                (t) => OrderingTerm.asc(t.id),
+              ]))
+            .get())
+          [r.sessionId, r.exerciseLogId, r.ruleId, r.priority, r.params],
+      ],
+    };
+
 void main() {
   setUp(() {
     db = AppDatabase(NativeDatabase.memory());
@@ -296,5 +341,38 @@ void main() {
     final b = await workout('Push', at(10, 26), {'Bench Press': [(62, 5)]});
     final hits = await suggestionsFor(b);
     expect(hits.single.ruleId, equals('pr'));
+  });
+
+  test('rebuildAll restores every cached value after corruption', () async {
+    goal = 1;
+    for (final d in [5, 12, 19, 26]) {
+      await workout('Push', at(10, d), {
+        'Overhead Press': [(40, 8), (40, 8), (40, 8)],
+        'Bench Press': [(60, 10)],
+      });
+    }
+    await repo.markRest(EpochDay.fromDate(DateTime(2026, 10, 21)));
+    final before = await snapshot();
+    expect((before['suggestions'] as List), isNotEmpty); // the stall rule fired
+
+    // Corrupt every derived table.
+    await db.customStatement(
+        'UPDATE exercise_logs SET volume = 0, pct = 999, prev_log_id = NULL, '
+        'best_weight = 1, reps_at_top = 99');
+    await db.customStatement(
+        'UPDATE sessions SET volume = 0, summary_pct = 500, '
+        'prev_session_id = NULL, set_count = 0');
+    await db.customStatement('DELETE FROM suggestions');
+    await db.customStatement('DELETE FROM week_summaries');
+    await db.customStatement('DELETE FROM exercise_stats');
+    await db.customStatement(
+        'UPDATE day_summaries SET set_count = 0 WHERE is_rest = 0');
+    await db.customStatement(
+        'UPDATE streak_states SET current_weeks = 42, longest_weeks = 42');
+    expect(await snapshot(), isNot(equals(before)));
+
+    await repo.rebuildAll();
+
+    expect(await snapshot(), equals(before));
   });
 }

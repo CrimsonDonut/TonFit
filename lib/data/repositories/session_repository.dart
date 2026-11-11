@@ -231,6 +231,52 @@ class SessionRepository {
   /// Recalculates the streak, for example after the weekly goal changes.
   Future<void> refreshStreak() => db.transaction(_refreshStreak);
 
+  /// Rebuilds EVERY cached value from the sets (requirements NFR-10), for
+  /// repair, import and migrations. Rest-day marks are kept. This is the one
+  /// place that touches the whole history, so it is an explicit action and
+  /// never part of normal use. Takes a few seconds on a large history.
+  Future<void> rebuildAll() {
+    return db.transaction(() async {
+      // Drop what is derived; keep sets, logs, sessions and rest-day marks.
+      await db.delete(db.suggestions).go();
+      await db.delete(db.exerciseStats).go();
+      await db.delete(db.weekSummaries).go();
+      await (db.delete(db.daySummaries)..where((t) => t.isRest.equals(false)))
+          .go();
+
+      final logs = await (db.select(db.exerciseLogs)
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.day),
+              (t) => OrderingTerm.asc(t.id),
+            ]))
+          .get();
+
+      // Metrics first for every log, then links (a link needs the earlier
+      // logs' set counts to be right already).
+      for (final log in logs) {
+        await _updateLogMetrics(log.id);
+      }
+      for (final log in logs) {
+        await _relinkLog(log.id);
+      }
+
+      final sessions = await (db.select(db.sessions)
+            ..orderBy([(t) => OrderingTerm.asc(t.day)]))
+          .get();
+      for (final s in sessions) {
+        await _refreshSession(s.id);
+      }
+
+      for (final exerciseId in {for (final l in logs) l.exerciseId}) {
+        await _refreshStats(exerciseId);
+      }
+      for (final s in sessions) {
+        await _refreshSuggestions(s.id);
+      }
+      await _refreshStreak();
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Cache pipeline
   // ---------------------------------------------------------------------------
@@ -254,6 +300,12 @@ class SessionRepository {
   /// Recomputes one exercise log's cached numbers from its sets, then relinks
   /// it to the previous occurrence.
   Future<void> _refreshLog(int logId) async {
+    await _updateLogMetrics(logId);
+    await _relinkLog(logId);
+  }
+
+  /// Volume, set count and bests of one log, straight from its sets.
+  Future<void> _updateLogMetrics(int logId) async {
     final log = await _log(logId);
     final exercise = await (db.select(db.exercises)
           ..where((t) => t.id.equals(log.exerciseId)))
@@ -271,7 +323,6 @@ class SessionRepository {
         repsAtTop: Value(m.repsAtTop),
       ),
     );
-    await _relinkLog(logId);
   }
 
   /// Points the log at the most recent EARLIER log of the same exercise that

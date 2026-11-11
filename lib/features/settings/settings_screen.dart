@@ -80,6 +80,12 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => context.push('/settings/programs'),
           ),
           const Divider(),
+          _NavRow(
+            title: 'Export / Import',
+            subtitle: 'Back up, restore and repair your data',
+            onTap: () => context.push('/settings/backup'),
+          ),
+          const Divider(),
           const SizedBox(height: 48),
           Center(child: Text('TonFit v$appVersion', style: text.bodySmall)),
           const SizedBox(height: 24),

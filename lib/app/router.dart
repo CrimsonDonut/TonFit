@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/session/add_exercise_screen.dart';
 import '../features/session/choose_program_screen.dart';
+import '../features/settings/backup_screen.dart';
 import '../features/settings/program_detail_screen.dart';
 import '../features/settings/programs_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -27,6 +28,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/settings/backup',
+      builder: (context, state) => const BackupScreen(),
     ),
     GoRoute(
       path: '/settings/programs',
