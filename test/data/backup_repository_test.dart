@@ -139,6 +139,7 @@ Future<Map<String, Object?>> portable(Env env) async {
 }
 
 void main() {
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   setUp(() => tmp = Directory.systemTemp.createTempSync('tonfit_test_'));
   tearDown(() => tmp.deleteSync(recursive: true));
 
