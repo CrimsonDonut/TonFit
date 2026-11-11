@@ -7,6 +7,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/queries/workout_queries.dart';
+import '../../data/repositories/session_repository.dart';
 import '../../domain/epoch_day.dart';
 import '../session/day_card.dart';
 import 'heatmap_section.dart';
@@ -40,8 +41,20 @@ class DashboardScreen extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(
                     AppSpacing.margin, 16, AppSpacing.margin, 16),
                 children: [
-                  Text(Fmt.monthYear(date), style: text.headlineLarge),
-                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(Fmt.monthYear(date),
+                            style: text.headlineLarge),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined),
+                        tooltip: 'Settings',
+                        onPressed: () => context.push('/settings'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   const Divider(),
                   const _StreakRow(),
                   const Divider(),
@@ -105,6 +118,7 @@ class _TodayRow extends ConsumerWidget {
     final date = EpochDay.toDate(today);
     final detail = ref.watch(dayDetailProvider(today)).valueOrNull;
     final expanded = ref.watch(todayExpandedProvider);
+    final isRest = ref.watch(restDayProvider(today)).valueOrNull ?? false;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -125,7 +139,8 @@ class _TodayRow extends ConsumerWidget {
                 ),
                 const Spacer(),
                 if (detail == null)
-                  Text('No session yet', style: text.bodySmall)
+                  Text(isRest ? 'Rest day' : 'No session yet',
+                      style: text.bodySmall)
                 else ...[
                   if (!expanded) ...[
                     Text(detail.program.name, style: text.bodyMedium),
@@ -142,6 +157,16 @@ class _TodayRow extends ConsumerWidget {
             ),
           ),
         ),
+        if (detail == null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => ref
+                  .read(sessionRepositoryProvider)
+                  .markRest(today, rest: !isRest),
+              child: Text(isRest ? 'Undo rest day' : 'Mark as rest day'),
+            ),
+          ),
         if (detail != null && expanded) ...[
           DayCard(detail: detail),
           const SizedBox(height: 8),

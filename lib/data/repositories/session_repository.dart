@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/providers.dart';
 import '../../domain/epoch_day.dart';
 import '../../domain/progress.dart';
 import '../../domain/streak.dart';
@@ -580,5 +581,8 @@ class SessionRepository {
 }
 
 final sessionRepositoryProvider = Provider<SessionRepository>(
-  (ref) => SessionRepository(ref.watch(appDatabaseProvider)),
+  (ref) => SessionRepository(
+    ref.watch(appDatabaseProvider),
+    weeklyGoal: () => ref.read(weeklyGoalProvider),
+  ),
 );

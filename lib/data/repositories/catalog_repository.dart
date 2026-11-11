@@ -60,6 +60,58 @@ class CatalogRepository {
           );
     });
   }
+
+  static const int maxProgramName = 40;
+  static const int maxExerciseName = 60;
+
+  /// Renames a program. Returns false (and changes nothing) when the name is
+  /// empty, too long, or already used by another program (ignoring case).
+  Future<bool> renameProgram(int id, String name) {
+    return db.transaction(() async {
+      final clean = name.trim();
+      if (clean.isEmpty || clean.length > maxProgramName) return false;
+      final key = clean.toLowerCase();
+      final clash = await (db.select(db.programs)
+            ..where((t) => t.nameKey.equals(key) & t.id.equals(id).not()))
+          .getSingleOrNull();
+      if (clash != null) return false;
+      await (db.update(db.programs)..where((t) => t.id.equals(id)))
+          .write(ProgramsCompanion(name: Value(clean), nameKey: Value(key)));
+      return true;
+    });
+  }
+
+  /// Archived programs disappear from pickers but stay in history.
+  Future<void> setProgramArchived(int id, bool archived) =>
+      (db.update(db.programs)..where((t) => t.id.equals(id)))
+          .write(ProgramsCompanion(archived: Value(archived)));
+
+  /// Renames an exercise. Names are unique within a program, so the same name
+  /// may exist in another program. Returns false when it can't be used.
+  Future<bool> renameExercise(int id, String name) {
+    return db.transaction(() async {
+      final clean = name.trim();
+      if (clean.isEmpty || clean.length > maxExerciseName) return false;
+      final key = clean.toLowerCase();
+      final exercise = await (db.select(db.exercises)
+            ..where((t) => t.id.equals(id)))
+          .getSingle();
+      final clash = await (db.select(db.exercises)
+            ..where((t) =>
+                t.programId.equals(exercise.programId) &
+                t.nameKey.equals(key) &
+                t.id.equals(id).not()))
+          .getSingleOrNull();
+      if (clash != null) return false;
+      await (db.update(db.exercises)..where((t) => t.id.equals(id)))
+          .write(ExercisesCompanion(name: Value(clean), nameKey: Value(key)));
+      return true;
+    });
+  }
+
+  Future<void> setExerciseArchived(int id, bool archived) =>
+      (db.update(db.exercises)..where((t) => t.id.equals(id)))
+          .write(ExercisesCompanion(archived: Value(archived)));
 }
 
 final catalogRepositoryProvider = Provider<CatalogRepository>(

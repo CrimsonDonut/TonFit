@@ -86,6 +86,14 @@ class ProgramView {
   final int exerciseCount;
 }
 
+class ProgramDetail {
+  const ProgramDetail({required this.program, required this.exercises});
+  final Program program;
+
+  /// Every exercise of the program, archived ones included.
+  final List<Exercise> exercises;
+}
+
 class ExercisePicker {
   const ExercisePicker({required this.programId, required this.options});
   final int programId;
@@ -272,9 +280,11 @@ class WorkoutQueries {
 
   // --- programs and exercises ---
 
-  Future<List<ProgramView>> loadPrograms() async {
+  Future<List<ProgramView>> loadPrograms({bool includeArchived = false}) async {
     final programs = await (db.select(db.programs)
-          ..where((t) => t.archived.equals(false))
+          ..where((t) => includeArchived
+              ? const Constant(true)
+              : t.archived.equals(false))
           ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
         .get();
     final result = <ProgramView>[];
@@ -290,8 +300,34 @@ class WorkoutQueries {
     return result;
   }
 
-  Stream<List<ProgramView>> watchPrograms() =>
-      _watch(loadPrograms, [db.programs, db.exercises]);
+  Stream<List<ProgramView>> watchPrograms({bool includeArchived = false}) =>
+      _watch(
+        () => loadPrograms(includeArchived: includeArchived),
+        [db.programs, db.exercises],
+      );
+
+  Future<ProgramDetail> loadProgramDetail(int programId) async {
+    final program = await (db.select(db.programs)
+          ..where((t) => t.id.equals(programId)))
+        .getSingle();
+    final exercises = await (db.select(db.exercises)
+          ..where((t) => t.programId.equals(programId))
+          ..orderBy([(t) => OrderingTerm.asc(t.id)]))
+        .get();
+    return ProgramDetail(program: program, exercises: exercises);
+  }
+
+  Stream<ProgramDetail> watchProgramDetail(int programId) => _watch(
+        () => loadProgramDetail(programId),
+        [db.programs, db.exercises],
+      );
+
+  // --- rest days ---
+
+  Stream<bool> watchIsRest(int day) => (db.select(db.daySummaries)
+        ..where((t) => t.day.equals(day)))
+      .watchSingleOrNull()
+      .map((row) => row?.isRest ?? false);
 
   Future<ExercisePicker> loadExercisePicker(int sessionId) async {
     final session = await (db.select(db.sessions)
@@ -359,6 +395,18 @@ final streakProvider = StreamProvider<StreakState>(
 
 final programsProvider = StreamProvider<List<ProgramView>>(
   (ref) => ref.watch(workoutQueriesProvider).watchPrograms(),
+);
+
+final allProgramsProvider = StreamProvider<List<ProgramView>>(
+  (ref) => ref.watch(workoutQueriesProvider).watchPrograms(includeArchived: true),
+);
+
+final programDetailProvider = StreamProvider.family<ProgramDetail, int>(
+  (ref, id) => ref.watch(workoutQueriesProvider).watchProgramDetail(id),
+);
+
+final restDayProvider = StreamProvider.family<bool, int>(
+  (ref, day) => ref.watch(workoutQueriesProvider).watchIsRest(day),
 );
 
 final exercisePickerProvider = StreamProvider.family<ExercisePicker, int>(

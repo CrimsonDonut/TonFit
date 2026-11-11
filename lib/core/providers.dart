@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../domain/epoch_day.dart';
 import '../domain/weight.dart';
@@ -48,8 +49,58 @@ class TodayNotifier extends Notifier<int> with WidgetsBindingObserver {
 
 final todayProvider = NotifierProvider<TodayNotifier, int>(TodayNotifier.new);
 
-/// Weight unit. A settings screen will change this later.
-final weightUnitProvider = StateProvider<WeightUnit>((ref) => WeightUnit.kg);
-
 /// Whether today's row on the dashboard is expanded.
 final todayExpandedProvider = StateProvider<bool>((ref) => true);
+
+// -----------------------------------------------------------------------------
+// Settings (kept in shared_preferences: small flags only)
+// -----------------------------------------------------------------------------
+
+/// Loaded once in main() and injected with an override.
+final sharedPreferencesProvider = Provider<SharedPreferences>(
+  (ref) => throw UnimplementedError(
+    'sharedPreferencesProvider must be overridden in main()',
+  ),
+);
+
+class WeightUnitNotifier extends Notifier<WeightUnit> {
+  static const key = 'weight_unit';
+
+  @override
+  WeightUnit build() {
+    final saved = ref.watch(sharedPreferencesProvider).getString(key);
+    return saved == 'lb' ? WeightUnit.lb : WeightUnit.kg;
+  }
+
+  Future<void> set(WeightUnit unit) async {
+    state = unit;
+    await ref.read(sharedPreferencesProvider).setString(key, unit.name);
+  }
+}
+
+final weightUnitProvider =
+    NotifierProvider<WeightUnitNotifier, WeightUnit>(WeightUnitNotifier.new);
+
+class WeeklyGoalNotifier extends Notifier<int> {
+  static const key = 'weekly_goal';
+  static const int min = 1;
+  static const int max = 7;
+  static const int defaultGoal = 4;
+
+  static int _clamp(int v) => v < min ? min : (v > max ? max : v);
+
+  @override
+  int build() {
+    final saved = ref.watch(sharedPreferencesProvider).getInt(key);
+    return _clamp(saved ?? defaultGoal);
+  }
+
+  Future<void> set(int goal) async {
+    final value = _clamp(goal);
+    state = value;
+    await ref.read(sharedPreferencesProvider).setInt(key, value);
+  }
+}
+
+final weeklyGoalProvider =
+    NotifierProvider<WeeklyGoalNotifier, int>(WeeklyGoalNotifier.new);
