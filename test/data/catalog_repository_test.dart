@@ -1,5 +1,5 @@
-import 'package:drift/native.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tonfit/data/database/app_database.dart';
 import 'package:tonfit/data/database/tables.dart';
@@ -106,6 +106,52 @@ void main() {
       final b = await catalog.createExercise(
           programId: push, name: 'cable fly', type: ExerciseType.bodyweight);
       expect(a, equals(b));
+    });
+  });
+
+  group('deleting exercises', () {
+    test('a never-logged exercise can be deleted', () async {
+      final dips = await exercise('Push', 'Dips');
+      expect(await catalog.deleteExercise(dips.id), isTrue);
+
+      final left = await (db.select(db.exercises)
+            ..where((t) => t.id.equals(dips.id)))
+          .get();
+      expect(left, isEmpty);
+      // The other exercises of the program are untouched.
+      final push = await programId('Push');
+      final names = (await (db.select(db.exercises)
+                ..where((t) => t.programId.equals(push)))
+              .get())
+          .map((e) => e.name);
+      expect(names, contains('Bench Press'));
+    });
+
+    test('an exercise with history is refused and left intact', () async {
+      final bench = await exercise('Push', 'Bench Press');
+      final repo = SessionRepository(db, clock: () => DateTime(2026, 10, 19, 18));
+      final sid = await repo.startSession(programId: await programId('Push'));
+      final logId = await repo.addExercise(sessionId: sid, exerciseId: bench.id);
+      await repo.addSet(exerciseLogId: logId, weight: 6000, reps: 10);
+
+      expect(await catalog.deleteExercise(bench.id), isFalse);
+      final still = await (db.select(db.exercises)
+            ..where((t) => t.id.equals(bench.id)))
+          .getSingleOrNull();
+      expect(still, isNotNull);
+    });
+
+    test('removing it from its sessions makes it deletable', () async {
+      final bench = await exercise('Push', 'Bench Press');
+      final repo = SessionRepository(db, clock: () => DateTime(2026, 10, 19, 18));
+      final sid = await repo.startSession(programId: await programId('Push'));
+      final logId = await repo.addExercise(sessionId: sid, exerciseId: bench.id);
+      await repo.addSet(exerciseLogId: logId, weight: 6000, reps: 10);
+      expect(await catalog.deleteExercise(bench.id), isFalse);
+
+      await repo.removeExercise(logId);
+
+      expect(await catalog.deleteExercise(bench.id), isTrue);
     });
   });
 }

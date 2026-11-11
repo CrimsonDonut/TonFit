@@ -109,6 +109,22 @@ class CatalogRepository {
     });
   }
 
+  /// Deletes an exercise that has never been logged. Returns false (and
+  /// changes nothing) when it appears in any session, because deleting it
+  /// would erase sets. Archive it instead.
+  Future<bool> deleteExercise(int id) {
+    return db.transaction(() async {
+      final count = db.exerciseLogs.id.count();
+      final row = await (db.selectOnly(db.exerciseLogs)
+            ..addColumns([count])
+            ..where(db.exerciseLogs.exerciseId.equals(id)))
+          .getSingle();
+      if ((row.read(count) ?? 0) > 0) return false;
+      await (db.delete(db.exercises)..where((t) => t.id.equals(id))).go();
+      return true;
+    });
+  }
+
   Future<void> setExerciseArchived(int id, bool archived) =>
       (db.update(db.exercises)..where((t) => t.id.equals(id)))
           .write(ExercisesCompanion(archived: Value(archived)));

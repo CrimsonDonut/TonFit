@@ -26,6 +26,10 @@ abstract final class AppColors {
   static const negative = Color(0xFFFF6B6B);
   static const zero = Color(0xFFA0A0A0);
 
+  /// Outline around today's cell in the heatmap: white at about 50% so it
+  /// marks the day without glaring.
+  static const todayOutline = Color(0x80FFFFFF);
+
   /// Heatmap tiers, from no session (index 0) to heaviest (index 4).
   static const heatmap = <Color>[
     Color(0xFF1C1C1C),

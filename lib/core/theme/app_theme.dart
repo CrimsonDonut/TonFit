@@ -89,6 +89,32 @@ abstract final class AppTheme {
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
+          centerTitle: false,
+          titleSpacing: AppSpacing.margin,
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: AppColors.canvas,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          height: 64,
+          indicatorColor: AppColors.pressed,
+          iconTheme: WidgetStateProperty.resolveWith(
+            (states) => IconThemeData(
+              color: states.contains(WidgetState.selected)
+                  ? AppColors.textStrong
+                  : AppColors.textMuted,
+            ),
+          ),
+          labelTextStyle: WidgetStateProperty.resolveWith(
+            (states) => TextStyle(
+              fontFamily: fontFamily,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: states.contains(WidgetState.selected)
+                  ? AppColors.textStrong
+                  : AppColors.textMuted,
+            ),
+          ),
         ),
         iconTheme: const IconThemeData(color: AppColors.textPrimary),
         filledButtonTheme: FilledButtonThemeData(

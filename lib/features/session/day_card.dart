@@ -13,6 +13,7 @@ import '../../data/repositories/session_repository.dart';
 import '../../domain/epoch_day.dart';
 import '../../domain/progress.dart';
 import '../../domain/weight.dart';
+import '../settings/dialogs.dart';
 import 'add_set_sheet.dart';
 
 /// A percentage badge: "+3.8%" in green with a tint, "-2.1%" in coral,
@@ -190,7 +191,7 @@ class DayCard extends ConsumerWidget {
   }
 }
 
-class _ExerciseSection extends StatelessWidget {
+class _ExerciseSection extends ConsumerWidget {
   const _ExerciseSection({required this.view, required this.unit});
 
   final ExerciseLogView view;
@@ -203,8 +204,22 @@ class _ExerciseSection extends StatelessWidget {
         unit: unit,
       );
 
+  Future<void> _remove(BuildContext context, WidgetRef ref) async {
+    final sets = view.sets.length;
+    final consequence =
+        sets == 0 ? '' : ' Its ${Fmt.plural(sets, 'set')} will be deleted.';
+    final ok = await confirmDialog(
+      context,
+      title: 'Remove ${view.exercise.name}?',
+      message: 'It will be removed from this session.$consequence',
+      confirm: 'Remove',
+    );
+    if (!ok) return;
+    await ref.read(sessionRepositoryProvider).removeExercise(view.log.id);
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
     final bodyweight = view.exercise.type == ExerciseType.bodyweight;
 
@@ -217,6 +232,21 @@ class _ExerciseSection extends StatelessWidget {
             children: [
               Expanded(child: Text(view.exercise.name, style: text.titleMedium)),
               if (view.sets.isNotEmpty) PctBadge(view.log.pct),
+              PopupMenuButton<String>(
+                tooltip: 'Exercise options',
+                icon: const Icon(Icons.more_vert,
+                    size: 20, color: AppColors.textMuted),
+                onSelected: (_) => _remove(context, ref),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'remove',
+                    child: Text(
+                      'Remove from this session',
+                      style: TextStyle(color: AppColors.negative),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 4),

@@ -11,6 +11,7 @@ import '../../data/queries/workout_queries.dart';
 import '../../data/repositories/catalog_repository.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../domain/weight.dart';
+import '../settings/exercise_actions.dart';
 
 /// Pick exercises saved under the session's program, or create a new one.
 class AddExerciseScreen extends ConsumerStatefulWidget {
@@ -178,6 +179,8 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
                     for (final o in shown) ...[
                       InkWell(
                         onTap: o.added ? null : () => _add(o.exercise.id),
+                        onLongPress: () =>
+                            showExerciseActions(context, ref, o.exercise),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           child: Row(
@@ -205,6 +208,14 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
                       ),
                       const Divider(),
                     ],
+                    if (shown.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Text(
+                          'Press and hold an exercise to rename, archive or delete it.',
+                          style: text.bodySmall,
+                        ),
+                      ),
                   ],
                 );
               },

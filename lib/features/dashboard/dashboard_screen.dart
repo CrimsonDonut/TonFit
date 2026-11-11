@@ -32,49 +32,29 @@ class DashboardScreen extends ConsumerWidget {
       }
     }
 
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.margin, 16, AppSpacing.margin, 16),
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(Fmt.monthYear(date),
-                            style: text.headlineLarge),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.settings_outlined),
-                        tooltip: 'Settings',
-                        onPressed: () => context.push('/settings'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Divider(),
-                  const _StreakRow(),
-                  const Divider(),
-                  const _TodayRow(),
-                  const Divider(),
-                  const SizedBox(height: 24),
-                  const HeatmapSection(),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.margin),
-              child: FilledButton(
-                onPressed: primaryAction,
-                child: Text(detail != null ? 'Add exercise' : 'Start session'),
-              ),
-            ),
-          ],
-        ),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.margin,
+        16,
+        AppSpacing.margin,
+        24,
       ),
+      children: [
+        Text(Fmt.monthYear(date), style: text.headlineLarge),
+        const SizedBox(height: 16),
+        const Divider(),
+        const _StreakRow(),
+        const Divider(),
+        const _TodayRow(),
+        const Divider(),
+        const SizedBox(height: 16),
+        FilledButton(
+          onPressed: primaryAction,
+          child: Text(detail != null ? 'Add exercise' : 'Start session'),
+        ),
+        const SizedBox(height: 24),
+        const HeatmapSection(),
+      ],
     );
   }
 }

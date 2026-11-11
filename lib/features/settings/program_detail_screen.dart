@@ -8,6 +8,7 @@ import '../../data/database/tables.dart';
 import '../../data/queries/workout_queries.dart';
 import '../../data/repositories/catalog_repository.dart';
 import 'dialogs.dart';
+import 'exercise_actions.dart';
 
 /// One program: rename or archive it, and manage its exercises.
 class ProgramDetailScreen extends ConsumerWidget {
@@ -43,64 +44,6 @@ class ProgramDetailScreen extends ConsumerWidget {
         );
   }
 
-  Future<void> _exerciseActions(
-    BuildContext context,
-    WidgetRef ref,
-    Exercise e,
-  ) async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: Text(e.name),
-              subtitle: Text(
-                e.type == ExerciseType.bodyweight ? 'Bodyweight' : 'Weighted',
-              ),
-            ),
-            const Divider(),
-            if (!e.archived)
-              ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('Rename'),
-                onTap: () => Navigator.of(ctx).pop('rename'),
-              ),
-            ListTile(
-              leading: Icon(e.archived
-                  ? Icons.unarchive_outlined
-                  : Icons.archive_outlined),
-              title: Text(e.archived ? 'Restore' : 'Archive'),
-              subtitle: e.archived
-                  ? null
-                  : const Text('Hidden from pickers, kept in your history'),
-              onTap: () => Navigator.of(ctx).pop('archive'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (action == null || !context.mounted) return;
-
-    final catalog = ref.read(catalogRepositoryProvider);
-    if (action == 'archive') {
-      await catalog.setExerciseArchived(e.id, !e.archived);
-    } else if (action == 'rename') {
-      final name = await promptText(
-        context,
-        title: 'Rename exercise',
-        initial: e.name,
-        maxLength: 60,
-      );
-      if (name == null) return;
-      final ok = await catalog.renameExercise(e.id, name);
-      if (!ok && context.mounted) {
-        showMessage(context, 'That name is empty or already used in this program.');
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
@@ -118,7 +61,7 @@ class ProgramDetailScreen extends ConsumerWidget {
           Widget row(Exercise e) => Column(
                 children: [
                   InkWell(
-                    onTap: () => _exerciseActions(context, ref, e),
+                    onTap: () => showExerciseActions(context, ref, e),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       child: Row(

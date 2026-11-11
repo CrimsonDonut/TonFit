@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/format.dart';
 import '../../core/providers.dart';
@@ -12,9 +11,8 @@ import '../../data/queries/workout_queries.dart';
 import '../../domain/epoch_day.dart';
 import '../../domain/heatmap.dart';
 
-/// "ANNUAL LOG": the current year's heatmap (display only) and links to each
-/// year's session list. Cells are too small for fingers, so the heatmap itself
-/// is not interactive.
+/// "ANNUAL LOG": the current year's heatmap. Display only, because its cells
+/// are too small to tap. Past sessions are on the History tab.
 class HeatmapSection extends ConsumerWidget {
   const HeatmapSection({super.key});
 
@@ -24,8 +22,6 @@ class HeatmapSection extends ConsumerWidget {
     final today = ref.watch(todayProvider);
     final currentYear = EpochDay.toDate(today).year;
     final data = ref.watch(heatmapProvider(currentYear));
-    final firstYear = data.valueOrNull?.firstYear ?? currentYear;
-    final years = [for (var y = firstYear; y <= currentYear; y++) y];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -34,26 +30,13 @@ class HeatmapSection extends ConsumerWidget {
           children: [
             Text('ANNUAL LOG', style: text.labelSmall),
             const Spacer(),
-            for (final y in years)
-              InkWell(
-                onTap: () => context.push('/year/$y'),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                  child: Text(
-                    '$y',
-                    style: y == currentYear
-                        ? text.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            decoration: TextDecoration.underline,
-                            decorationColor: AppColors.textStrong,
-                          )
-                        : text.bodySmall,
-                  ),
-                ),
-              ),
-            const Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
+            Text(
+              '$currentYear',
+              style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
           ],
         ),
+        const SizedBox(height: 12),
         data.when(
           loading: () => const SizedBox(height: 120),
           error: (e, _) => Text('Could not load heatmap: $e'),
@@ -206,8 +189,8 @@ class _HeatmapPainter extends CustomPainter {
       if (day == todayDay) {
         paint
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2
-          ..color = AppColors.textStrong;
+          ..strokeWidth = 1.0
+          ..color = AppColors.todayOutline;
         canvas.drawRRect(RRect.fromRectAndRadius(rect, radius), paint);
       }
     }
