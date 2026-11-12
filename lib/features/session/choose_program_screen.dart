@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/format.dart';
+import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/queries/workout_queries.dart';
@@ -12,11 +13,17 @@ import '../../data/repositories/session_repository.dart';
 /// Start session, step 1: pick the target program. Tapping a program starts
 /// today's session in it and moves on to Add exercise.
 class ChooseProgramScreen extends ConsumerWidget {
-  const ChooseProgramScreen({super.key});
+  /// [day] is an epoch-day for logging a past day; null means today.
+  const ChooseProgramScreen({super.key, this.day});
+
+  final int? day;
 
   Future<void> _start(BuildContext context, WidgetRef ref, int programId) async {
-    final sessionId =
-        await ref.read(sessionRepositoryProvider).startSession(programId: programId);
+    final sessionId = await ref
+        .read(sessionRepositoryProvider)
+        .startSession(programId: programId, day: day);
+    // When logging a past day, History opens that day when we come back.
+    if (day != null) ref.read(pendingExpandDayProvider.notifier).state = day;
     if (context.mounted) context.pushReplacement('/session/$sessionId/exercises');
   }
 

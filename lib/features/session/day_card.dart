@@ -101,6 +101,23 @@ class DayCard extends ConsumerWidget {
         );
   }
 
+  Future<void> _deleteSession(BuildContext context, WidgetRef ref) async {
+    final sets = detail.logs.fold<int>(0, (a, v) => a + v.sets.length);
+    final consequence = sets == 0
+        ? ''
+        : ' Its ${Fmt.plural(detail.logs.length, 'exercise')} and '
+            '${Fmt.plural(sets, 'set')} will be deleted.';
+    final ok = await confirmDialog(
+      context,
+      title: 'Delete this ${detail.program.name} session?',
+      message: 'The day will go back to having nothing logged.$consequence '
+          'This can’t be undone.',
+      confirm: 'Delete',
+    );
+    if (!ok) return;
+    await ref.read(sessionRepositoryProvider).deleteSession(detail.session.id);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
@@ -186,6 +203,16 @@ class DayCard extends ConsumerWidget {
             ),
           ),
         ],
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => _deleteSession(context, ref),
+            icon: const Icon(Icons.delete_outline, size: 20),
+            label: const Text('Delete session'),
+            style: TextButton.styleFrom(foregroundColor: AppColors.negative),
+          ),
+        ),
       ],
     );
   }

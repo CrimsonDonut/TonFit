@@ -190,6 +190,37 @@ class SessionRepository {
     });
   }
 
+  /// Deletes a whole session with its exercises and sets, then repairs
+  /// everything that depended on it: the next sessions' percentages and links,
+  /// personal bests, suggestions, the heatmap day, the week count and the
+  /// streak. The day can be logged again afterwards.
+  Future<void> deleteSession(int sessionId) {
+    return db.transaction(() async {
+      final session = await _session(sessionId);
+      final logs = await (db.select(db.exerciseLogs)
+            ..where((t) => t.sessionId.equals(sessionId)))
+          .get();
+      final exerciseIds = {for (final l in logs) l.exerciseId};
+
+      // Cascades to the session's exercises, sets and suggestions.
+      await (db.delete(db.sessions)..where((t) => t.id.equals(sessionId))).go();
+      await (db.delete(db.daySummaries)
+            ..where((t) => t.day.equals(session.day)))
+          .go();
+
+      for (final exerciseId in exerciseIds) {
+        await _relinkFollowingLogs(exerciseId, session.day);
+      }
+      await _refreshFollowingSessions(session.programId, session.day);
+      await _refreshWeek(session.day);
+      for (final exerciseId in exerciseIds) {
+        await _refreshStats(exerciseId);
+        await _refreshSuggestionsAfter(session.day, exerciseId);
+      }
+      await _refreshStreak();
+    });
+  }
+
   /// Manual edit of time in / time out (epoch seconds).
   Future<void> setTimes({required int sessionId, int? timeIn, int? timeOut}) {
     return db.transaction(() async {
@@ -513,14 +544,9 @@ class SessionRepository {
         );
   }
 
-  /// Refreshes suggestions for the session itself and for the next few
-  /// sessions that contain the exercise, since their history windows changed.
-  Future<void> _refreshSuggestionsFrom(
-    int sessionId,
-    int day,
-    int exerciseId,
-  ) async {
-    final ids = <int>{sessionId};
+  /// The next few sessions that contain the exercise after [day]: their
+  /// suggestion history windows are the ones an edit can change.
+  Future<Set<int>> _followingSessionIds(int exerciseId, int day) async {
     final following = await (db.select(db.exerciseLogs)
           ..where((t) =>
               t.exerciseId.equals(exerciseId) &
@@ -529,8 +555,25 @@ class SessionRepository {
           ..orderBy([(t) => OrderingTerm.asc(t.day)])
           ..limit(_rippleSessions))
         .get();
-    ids.addAll(following.map((l) => l.sessionId));
+    return {for (final l in following) l.sessionId};
+  }
+
+  /// Refreshes suggestions for the session itself and for the next few
+  /// sessions that contain the exercise, since their history windows changed.
+  Future<void> _refreshSuggestionsFrom(
+    int sessionId,
+    int day,
+    int exerciseId,
+  ) async {
+    final ids = {sessionId, ...await _followingSessionIds(exerciseId, day)};
     for (final id in ids) {
+      await _refreshSuggestions(id);
+    }
+  }
+
+  /// Same, for when the session at [day] no longer exists (it was deleted).
+  Future<void> _refreshSuggestionsAfter(int day, int exerciseId) async {
+    for (final id in await _followingSessionIds(exerciseId, day)) {
       await _refreshSuggestions(id);
     }
   }

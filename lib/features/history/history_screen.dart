@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/format.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/queries/workout_queries.dart';
+import '../../data/repositories/session_repository.dart';
 import '../../domain/epoch_day.dart';
 import '../dashboard/heatmap_section.dart';
 import '../session/day_card.dart';
+import '../settings/dialogs.dart';
 
 /// The History tab: every session of a year, newest first and grouped by
 /// month, starting with the current year (arrows go to earlier years). Tap a
@@ -45,6 +48,72 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     });
   }
 
+  /// Jump to the day's year and open it.
+  void _reveal(int day) {
+    setState(() {
+      _selectedYear = EpochDay.toDate(day).year;
+      _expanded.add(day);
+    });
+  }
+
+  /// Log a session on, or mark as a rest day, a day that was missed.
+  Future<void> _addPastDay(int today) async {
+    final todayDate = EpochDay.toDate(today);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: todayDate.subtract(const Duration(days: 1)),
+      firstDate: DateTime(2020),
+      lastDate: todayDate,
+      helpText: 'WHICH DAY?',
+    );
+    if (picked == null || !mounted) return;
+    final day = EpochDay.fromDate(picked);
+
+    // That day already has a session: open it instead of making a second one.
+    final existing = await ref.read(workoutQueriesProvider).loadDay(day);
+    if (!mounted) return;
+    if (existing != null) {
+      _reveal(day);
+      showMessage(context, 'That day already has a session. It is open below.');
+      return;
+    }
+
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text('${Fmt.dayLabel(picked)} ${Fmt.month(picked.month)} ${picked.year}'),
+              subtitle: const Text('Nothing is logged on this day yet'),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.fitness_center),
+              title: const Text('Log a session'),
+              onTap: () => Navigator.of(ctx).pop('session'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.bedtime_outlined),
+              title: const Text('Mark as rest day'),
+              subtitle: const Text('Rest days never affect your streak'),
+              onTap: () => Navigator.of(ctx).pop('rest'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    if (choice == 'session') {
+      context.push('/programs?day=$day');
+    } else {
+      await ref.read(sessionRepositoryProvider).markRest(day);
+      if (mounted) _reveal(day);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
@@ -53,6 +122,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     final selectedYear = _selectedYear ?? currentYear;
     final data = ref.watch(yearDataProvider(selectedYear));
     final heat = ref.watch(heatmapProvider(selectedYear));
+
+    // After logging a past day, open it when we come back to this tab.
+    ref.listen<int?>(pendingExpandDayProvider, (previous, next) {
+      if (next == null) return;
+      _reveal(next);
+      ref.read(pendingExpandDayProvider.notifier).state = null;
+    });
 
     return data.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -91,6 +167,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                   canGoForward: selectedYear < currentYear,
                   onBack: () => _goTo(selectedYear - 1),
                   onForward: () => _goTo(selectedYear + 1),
+                  onAddPastDay: () => _addPastDay(today),
                   heatmap: heat.when(
                     loading: () => const SizedBox(height: 120),
                     error: (e, _) => const SizedBox.shrink(),
@@ -150,6 +227,7 @@ class _YearHeader extends StatelessWidget {
     required this.canGoForward,
     required this.onBack,
     required this.onForward,
+    required this.onAddPastDay,
     required this.heatmap,
   });
 
@@ -159,6 +237,7 @@ class _YearHeader extends StatelessWidget {
   final bool canGoForward;
   final VoidCallback onBack;
   final VoidCallback onForward;
+  final VoidCallback onAddPastDay;
   final Widget heatmap;
 
   @override
@@ -184,7 +263,13 @@ class _YearHeader extends StatelessWidget {
           ],
         ),
         Text(Fmt.plural(total, 'session'), style: text.bodySmall),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: onAddPastDay,
+          icon: const Icon(Icons.add, size: 20),
+          label: const Text('Log or mark a past day'),
+        ),
+        const SizedBox(height: 8),
         heatmap,
         const SizedBox(height: 8),
         const Divider(),
@@ -211,24 +296,42 @@ class _DayEntry extends ConsumerWidget {
     final date = EpochDay.toDate(entry.day);
     final label = '${date.day} ${Fmt.weekday(date.weekday)}';
 
-    // A rest day: shown, but nothing to open.
+    // A rest day: nothing to open, but the mark can be removed.
     if (entry.sessionId == null) {
       return Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 72,
-                  child: Text(label,
-                      style: text.bodyLarge
-                          ?.copyWith(color: AppColors.textMuted)),
-                ),
-                Text('Rest',
-                    style:
-                        text.bodyLarge?.copyWith(color: AppColors.textMuted)),
-              ],
+          InkWell(
+            onTap: () async {
+              final ok = await confirmDialog(
+                context,
+                title: 'Remove rest day?',
+                message: 'This day will no longer be marked as a rest day.',
+                confirm: 'Remove',
+              );
+              if (ok) {
+                await ref
+                    .read(sessionRepositoryProvider)
+                    .markRest(entry.day, rest: false);
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 72,
+                    child: Text(label,
+                        style: text.bodyLarge
+                            ?.copyWith(color: AppColors.textMuted)),
+                  ),
+                  Expanded(
+                    child: Text('Rest',
+                        style: text.bodyLarge
+                            ?.copyWith(color: AppColors.textMuted)),
+                  ),
+                  Text('Tap to remove', style: text.bodySmall),
+                ],
+              ),
             ),
           ),
           const Divider(),

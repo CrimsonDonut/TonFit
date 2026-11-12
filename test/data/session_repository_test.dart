@@ -375,4 +375,83 @@ void main() {
 
     expect(await snapshot(), equals(before));
   });
+
+  test('deleting a session removes it and repairs what depended on it', () async {
+    goal = 1;
+    final a = await workout('Push', at(10, 12), {'Bench Press': [(60, 10)]});
+    final b = await workout('Push', at(10, 19), {'Bench Press': [(62, 10)]});
+    final c = await workout('Push', at(10, 26), {'Bench Press': [(66, 10)]});
+    expect((await logOf(c, 'Push', 'Bench Press')).pct, equals(65)); // vs 62 kg
+
+    var streak = await db.select(db.streakStates).getSingle();
+    expect([streak.currentWeeks, streak.longestWeeks], equals([3, 3]));
+
+    await repo.deleteSession(b);
+
+    // Gone: the session, its exercises, its sets and its heatmap day.
+    expect(await (db.select(db.sessions)..where((t) => t.id.equals(b))).get(), isEmpty);
+    expect(await (db.select(db.exerciseLogs)..where((t) => t.sessionId.equals(b))).get(),
+        isEmpty);
+    expect(await db.select(db.setEntries).get().then((r) => r.length), equals(2));
+    final day = EpochDay.fromDate(DateTime(2026, 10, 19));
+    expect(await (db.select(db.daySummaries)..where((t) => t.day.equals(day))).get(),
+        isEmpty);
+
+    // The next session now compares with the one before the deleted one.
+    final logA = await logOf(a, 'Push', 'Bench Press');
+    final logC = await logOf(c, 'Push', 'Bench Press');
+    expect(logC.prevLogId, equals(logA.id));
+    expect(logC.pct, equals(100)); // 66 kg vs 60 kg
+    final sC = await sessionRow(c);
+    expect(sC.prevSessionId, equals(a));
+    expect(sC.summaryPct, equals(100));
+
+    // The deleted week no longer counts, so the streak is broken.
+    final weeks = await (db.select(db.weekSummaries)
+          ..orderBy([(t) => OrderingTerm.asc(t.weekStart)]))
+        .get();
+    expect(weeks.map((w) => w.weekStart).toList(), equals([20738, 20752]));
+    streak = await db.select(db.streakStates).getSingle();
+    expect([streak.currentWeeks, streak.longestWeeks], equals([1, 1]));
+
+    // Personal bests no longer include the deleted session.
+    final stats = await db.select(db.exerciseStats).getSingle();
+    expect(stats.bestWeight, equals(6600));
+  });
+
+  test('a day can be logged again after its session is deleted', () async {
+    final first = await workout('Push', at(10, 19), {'Bench Press': [(60, 10)]});
+    await repo.deleteSession(first);
+    expect(await db.select(db.sessions).get(), isEmpty);
+
+    await workout('Pull', at(10, 19), {'Barbell Row': [(50, 10)]});
+    final sessions = await db.select(db.sessions).get();
+    expect(sessions.length, equals(1));
+    expect(sessions.single.programId, equals(await programId('Pull')));
+  });
+
+  test('logging a past day updates the session that follows it', () async {
+    final c = await workout('Push', at(10, 26), {'Bench Press': [(66, 10)]});
+    expect((await logOf(c, 'Push', 'Bench Press')).pct, isNull); // first Push
+
+    // Backfill the 19th while "today" is still the 26th.
+    final pid = await programId('Push');
+    final eid = await exerciseId('Push', 'Bench Press');
+    final a = await repo.startSession(
+      programId: pid,
+      day: EpochDay.fromDate(DateTime(2026, 10, 19)),
+    );
+    final logId = await repo.addExercise(sessionId: a, exerciseId: eid);
+    await repo.addSet(exerciseLogId: logId, weight: 6000, reps: 10);
+
+    final logC = await logOf(c, 'Push', 'Bench Press');
+    expect(logC.prevLogId, equals(logId));
+    expect(logC.pct, equals(100)); // 66 kg vs 60 kg
+    expect((await sessionRow(c)).prevSessionId, equals(a));
+
+    // Times are only stamped for today's session, never for a backfilled day.
+    final past = await sessionRow(a);
+    expect(past.timeIn, isNull);
+    expect(past.timeOut, isNull);
+  });
 }

@@ -49,6 +49,10 @@ class TodayNotifier extends Notifier<int> with WidgetsBindingObserver {
 
 final todayProvider = NotifierProvider<TodayNotifier, int>(TodayNotifier.new);
 
+/// A day the History tab should open (jump to its year and expand it), set
+/// after logging a past day. History clears it once it has acted on it.
+final pendingExpandDayProvider = StateProvider<int?>((ref) => null);
+
 /// Whether today's row on the dashboard is expanded.
 final todayExpandedProvider = StateProvider<bool>((ref) => true);
 

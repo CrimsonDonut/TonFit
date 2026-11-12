@@ -39,7 +39,9 @@ final appRouter = GoRouter(
     // Full-screen flows, pushed above the tabs.
     GoRoute(
       path: '/programs',
-      builder: (context, state) => const ChooseProgramScreen(),
+      builder: (context, state) => ChooseProgramScreen(
+        day: int.tryParse(state.uri.queryParameters['day'] ?? ''),
+      ),
     ),
     GoRoute(
       path: '/session/:id/exercises',
