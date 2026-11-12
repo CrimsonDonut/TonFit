@@ -64,8 +64,8 @@ class HeatmapLegend extends StatelessWidget {
           const SizedBox(width: 6),
           for (final c in AppColors.heatmap)
             Container(
-              width: 10,
-              height: 10,
+              width: 12,
+              height: 12,
               margin: const EdgeInsets.symmetric(horizontal: 1.5),
               decoration: BoxDecoration(
                 color: c,
@@ -80,48 +80,48 @@ class HeatmapLegend extends StatelessWidget {
   }
 }
 
-/// Geometry for painting the grid.
+/// Geometry for painting the grid, from the start month to December.
 class _Layout {
-  _Layout._({
+  _Layout({
     required this.year,
-    required this.firstDay,
-    required this.lastDay,
-    required this.firstWeek,
-    required this.cols,
-    required this.cell,
-  });
+    required this.startMonth,
+    required double available,
+  })  : firstDay = Heatmap.firstDay(year, startMonth),
+        lastDay = Heatmap.lastDay(year),
+        firstWeek = EpochDay.weekStart(Heatmap.firstDay(year, startMonth)),
+        cols = Heatmap.columns(year, startMonth),
+        pitch = Heatmap.cellPitch(
+          available: available,
+          columns: Heatmap.columns(year, startMonth),
+        );
 
-  factory _Layout(int year, double width) {
-    final firstDay = EpochDay.fromDate(DateTime(year, 1, 1));
-    final lastDay = EpochDay.fromDate(DateTime(year, 12, 31));
-    final firstWeek = EpochDay.weekStart(firstDay);
-    final cols = (EpochDay.weekStart(lastDay) - firstWeek) ~/ 7 + 1;
-    final cell = (width - leftPad) / cols;
-    return _Layout._(
-      year: year,
-      firstDay: firstDay,
-      lastDay: lastDay,
-      firstWeek: firstWeek,
-      cols: cols,
-      cell: cell,
-    );
-  }
+  /// Width of the fixed weekday-label column on the left.
+  static const double labelWidth = 18;
 
-  static const double leftPad = 16;
-  static const double topPad = 16;
+  /// Height reserved above the grid for month names.
+  static const double topPad = 18;
 
   final int year;
+  final int startMonth;
   final int firstDay;
   final int lastDay;
   final int firstWeek;
   final int cols;
-  final double cell;
 
-  double get gap => math.max(1.0, cell * 0.18);
-  double get height => topPad + 7 * cell;
+  /// Distance between neighbouring cells.
+  final double pitch;
+
+  double get gap => math.max(1.5, pitch * 0.16);
+  double get gridWidth => cols * pitch;
+  double get height => topPad + 7 * pitch;
 }
 
-/// The heatmap itself: painted on a single canvas, display only.
+/// The heatmap itself, painted on single canvases and display only.
+///
+/// It runs from the first month with data (or the current month for a new
+/// user) to December, so it is never mostly empty. Cells are a comfortable size;
+/// when the range is too wide to fit at that size it scrolls sideways, opening
+/// on the current week.
 class HeatmapGrid extends StatelessWidget {
   const HeatmapGrid({super.key, required this.data, required this.todayDay});
 
@@ -132,11 +132,56 @@ class HeatmapGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final layout = _Layout(data.year, constraints.maxWidth);
-        return RepaintBoundary(
+        final startMonth = Heatmap.startMonth(
+          year: data.year,
+          firstDataDay: data.firstDataDay,
+          today: todayDay,
+        );
+        final available = constraints.maxWidth - _Layout.labelWidth;
+        final layout = _Layout(
+          year: data.year,
+          startMonth: startMonth,
+          available: available,
+        );
+
+        final grid = RepaintBoundary(
           child: CustomPaint(
-            size: Size(constraints.maxWidth, layout.height),
-            painter: _HeatmapPainter(layout, data, todayDay),
+            size: Size(layout.gridWidth, layout.height),
+            painter: _GridPainter(layout, data, todayDay),
+          ),
+        );
+
+        final Widget body;
+        if (layout.gridWidth <= available) {
+          body = Align(alignment: Alignment.centerLeft, child: grid);
+        } else {
+          final isCurrentYear = data.year == EpochDay.toDate(todayDay).year;
+          body = _HorizontalScroll(
+            key: ValueKey('${data.year}-$startMonth'),
+            initialOffset: Heatmap.initialScrollOffset(
+              currentColumn:
+                  isCurrentYear ? (todayDay - layout.firstWeek) ~/ 7 : null,
+              pitch: layout.pitch,
+              viewportWidth: available,
+              contentWidth: layout.gridWidth,
+            ),
+            child: grid,
+          );
+        }
+
+        return SizedBox(
+          height: layout.height,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Weekday names stay put while the grid scrolls.
+              SizedBox(
+                width: _Layout.labelWidth,
+                height: layout.height,
+                child: CustomPaint(painter: _WeekdayLabelsPainter(layout)),
+              ),
+              Expanded(child: body),
+            ],
           ),
         );
       },
@@ -144,42 +189,74 @@ class HeatmapGrid extends StatelessWidget {
   }
 }
 
-class _HeatmapPainter extends CustomPainter {
-  _HeatmapPainter(this.layout, this.data, this.todayDay);
+class _HorizontalScroll extends StatefulWidget {
+  const _HorizontalScroll({
+    super.key,
+    required this.initialOffset,
+    required this.child,
+  });
+
+  final double initialOffset;
+  final Widget child;
+
+  @override
+  State<_HorizontalScroll> createState() => _HorizontalScrollState();
+}
+
+class _HorizontalScrollState extends State<_HorizontalScroll> {
+  late final ScrollController _controller =
+      ScrollController(initialScrollOffset: widget.initialOffset);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      controller: _controller,
+      scrollDirection: Axis.horizontal,
+      child: widget.child,
+    );
+  }
+}
+
+const _labelStyle = TextStyle(
+  fontFamily: AppTheme.fontFamily,
+  fontSize: 10,
+  color: AppColors.textMuted,
+);
+
+TextPainter _textPainter(String text) => TextPainter(
+      text: TextSpan(text: text, style: _labelStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+/// Squares, today's outline and month names.
+class _GridPainter extends CustomPainter {
+  _GridPainter(this.layout, this.data, this.todayDay);
 
   final _Layout layout;
   final HeatmapData data;
   final int todayDay;
 
-  static const _labelStyle = TextStyle(
-    fontFamily: AppTheme.fontFamily,
-    fontSize: 9,
-    color: AppColors.textMuted,
-  );
-
-  void _label(Canvas canvas, String text, Offset at) {
-    final tp = TextPainter(
-      text: TextSpan(text: text, style: _labelStyle),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    tp.paint(canvas, at);
-  }
-
   @override
   void paint(Canvas canvas, Size size) {
     final l = layout;
     final paint = Paint();
-    final radius = Radius.circular(l.cell * 0.2);
+    final square = l.pitch - l.gap;
+    final radius = Radius.circular(square * 0.22);
 
-    // One rounded square per day of the year.
     for (var day = l.firstDay; day <= l.lastDay; day++) {
       final col = (day - l.firstWeek) ~/ 7;
       final row = EpochDay.weekdayOf(day) - 1;
       final rect = Rect.fromLTWH(
-        _Layout.leftPad + col * l.cell,
-        _Layout.topPad + row * l.cell,
-        l.cell - l.gap,
-        l.cell - l.gap,
+        col * l.pitch,
+        _Layout.topPad + row * l.pitch,
+        square,
+        square,
       );
       paint
         ..style = PaintingStyle.fill
@@ -195,25 +272,39 @@ class _HeatmapPainter extends CustomPainter {
       }
     }
 
-    // Month labels along the top.
-    for (var month = 1; month <= 12; month++) {
-      final first = EpochDay.fromDate(DateTime(l.year, month, 1));
+    // A month name above the first column of each month shown.
+    for (var month = l.startMonth; month <= 12; month++) {
+      final first = Heatmap.firstDay(l.year, month);
       final col = (first - l.firstWeek) ~/ 7;
-      _label(
-        canvas,
-        Fmt.month(month).substring(0, 3),
-        Offset(_Layout.leftPad + col * l.cell, 0),
-      );
+      _textPainter(Fmt.month(month).substring(0, 3))
+          .paint(canvas, Offset(col * l.pitch, 0));
     }
+  }
 
-    // Weekday labels: M W F S (rows 0, 2, 4, 6).
+  @override
+  bool shouldRepaint(_GridPainter old) =>
+      old.data != data ||
+      old.todayDay != todayDay ||
+      old.layout.pitch != layout.pitch ||
+      old.layout.startMonth != layout.startMonth;
+}
+
+/// M, W, F and S beside rows 0, 2, 4 and 6.
+class _WeekdayLabelsPainter extends CustomPainter {
+  _WeekdayLabelsPainter(this.layout);
+
+  final _Layout layout;
+
+  @override
+  void paint(Canvas canvas, Size size) {
     const rows = {0: 'M', 2: 'W', 4: 'F', 6: 'S'};
     rows.forEach((row, name) {
-      _label(canvas, name, Offset(0, _Layout.topPad + row * l.cell));
+      final tp = _textPainter(name);
+      final y = _Layout.topPad + row * layout.pitch + (layout.pitch - tp.height) / 2;
+      tp.paint(canvas, Offset(0, y));
     });
   }
 
   @override
-  bool shouldRepaint(_HeatmapPainter old) =>
-      old.data != data || old.todayDay != todayDay || old.layout.cell != layout.cell;
+  bool shouldRepaint(_WeekdayLabelsPainter old) => old.layout.pitch != layout.pitch;
 }

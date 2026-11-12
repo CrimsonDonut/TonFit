@@ -42,9 +42,14 @@ class HeatmapData {
   const HeatmapData({
     required this.year,
     required this.firstYear,
+    required this.firstDataDay,
     required this.setCounts,
   });
   final int year;
+
+  /// Earliest day with a session or rest mark across ALL years, or null when
+  /// there is no data yet. The heatmap starts at that month (requirements FR-6).
+  final int? firstDataDay;
 
   /// First year that has any data, for the year switcher.
   final int firstYear;
@@ -206,13 +211,18 @@ class WorkoutQueries {
 
   // --- heatmap ---
 
-  /// First year with any data, or [fallback] when there is none.
-  Future<int> _firstYear(int fallback) async {
+  /// Earliest day that has a session or a rest mark, or null.
+  Future<int?> _firstDataDay() async {
     final minDay = db.daySummaries.day.min();
     final row =
         await (db.selectOnly(db.daySummaries)..addColumns([minDay])).getSingle();
-    final m = row.read(minDay);
-    return m == null ? fallback : EpochDay.toDate(m).year;
+    return row.read(minDay);
+  }
+
+  /// First year with any data, or [fallback] when there is none.
+  Future<int> _firstYear(int fallback) async {
+    final first = await _firstDataDay();
+    return first == null ? fallback : EpochDay.toDate(first).year;
   }
 
   Future<HeatmapData> loadHeatmap(int year) async {
@@ -223,9 +233,11 @@ class WorkoutQueries {
               t.day.isBetweenValues(start, end) & t.sessionId.isNotNull()))
         .get();
 
+    final first = await _firstDataDay();
     return HeatmapData(
       year: year,
-      firstYear: await _firstYear(year),
+      firstYear: first == null ? year : EpochDay.toDate(first).year,
+      firstDataDay: first,
       setCounts: {for (final r in rows) r.day: r.setCount},
     );
   }
