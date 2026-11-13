@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../data/database/tables.dart';
 
 /// A one-field text dialog. Returns the text, or null when cancelled.
@@ -37,7 +38,65 @@ Future<String?> promptText(
   );
 }
 
-/// Name plus weighted/bodyweight choice for a new exercise.
+/// The four kinds of exercise as a list of radio-style choices, each with a
+/// one-line example, so the difference is clear before anything is logged.
+class ExerciseTypePicker extends StatelessWidget {
+  const ExerciseTypePicker({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final ExerciseType value;
+  final ValueChanged<ExerciseType> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final t in ExerciseType.values)
+          InkWell(
+            onTap: () => onChanged(t),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      value == t
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      size: 20,
+                      color: value == t
+                          ? AppColors.accent
+                          : AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(t.label, style: text.bodyLarge),
+                        const SizedBox(height: 2),
+                        Text(t.description, style: text.bodySmall),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Name plus the kind of exercise, for a new exercise.
 Future<({String name, ExerciseType type})?> promptNewExercise(
   BuildContext context,
 ) {
@@ -48,28 +107,24 @@ Future<({String name, ExerciseType type})?> promptNewExercise(
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setState) => AlertDialog(
         title: const Text('New exercise'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: controller,
-              autofocus: true,
-              maxLength: 60,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(hintText: 'e.g. Cable Fly'),
-            ),
-            const SizedBox(height: 16),
-            SegmentedButton<ExerciseType>(
-              segments: const [
-                ButtonSegment(
-                    value: ExerciseType.weighted, label: Text('Weighted')),
-                ButtonSegment(
-                    value: ExerciseType.bodyweight, label: Text('Bodyweight')),
-              ],
-              selected: {type},
-              onSelectionChanged: (s) => setState(() => type = s.first),
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 60,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(hintText: 'e.g. Cable Fly'),
+              ),
+              const SizedBox(height: 8),
+              ExerciseTypePicker(
+                value: type,
+                onChanged: (t) => setState(() => type = t),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(

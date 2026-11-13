@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tonfit/domain/exercise_type.dart';
 import 'package:tonfit/domain/progress.dart';
 
 void main() {
@@ -18,7 +19,7 @@ void main() {
     test('bodyweight volume uses the reference body weight', () {
       final m = Progress.metrics(
         const [SetData(null, 10), SetData(null, 8)],
-        bodyweight: true,
+        type: ExerciseType.bodyweight,
       );
       expect(m.volume, equals(7000 * 18));
       expect(m.topWeight, equals(0));
@@ -26,10 +27,36 @@ void main() {
     });
 
     test('added weight raises bodyweight volume smoothly', () {
-      final plain = Progress.metrics(const [SetData(null, 8)], bodyweight: true);
-      final added = Progress.metrics(const [SetData(1000, 8)], bodyweight: true);
+      final plain = Progress.metrics(const [SetData(null, 8)], type: ExerciseType.bodyweight);
+      final added = Progress.metrics(const [SetData(1000, 8)], type: ExerciseType.bodyweight);
       final pct = Progress.pctTenths(added.volume, plain.volume);
       expect(pct, equals(143)); // +14.3%, not thousands of percent
+    });
+
+    test('timed volume is total seconds and the best set is the longest', () {
+      final m = Progress.metrics(
+        const [SetData(null, 60), SetData(null, 45), SetData(null, 75)],
+        type: ExerciseType.timed,
+      );
+      expect(m.volume, equals(180));
+      expect(m.setCount, equals(3));
+      expect(m.topWeight, equals(0));
+      expect(m.repsAtTop, equals(75));
+    });
+
+    test('sport is measured the same way, in seconds', () {
+      final m = Progress.metrics(
+        const [SetData(null, 5400)],
+        type: ExerciseType.sport,
+      );
+      expect(m.volume, equals(5400));
+      expect(m.repsAtTop, equals(5400));
+    });
+
+    test('a longer plank shows as a gain', () {
+      final before = Progress.metrics(const [SetData(null, 60)], type: ExerciseType.timed);
+      final after = Progress.metrics(const [SetData(null, 66)], type: ExerciseType.timed);
+      expect(Progress.pctTenths(after.volume, before.volume), equals(100)); // +10.0%
     });
 
     test('no sets gives zeros', () {
@@ -68,6 +95,71 @@ void main() {
     test('New when nothing is shared', () {
       expect(Progress.sessionPctTenths({1: 10}, {2: 10}), isNull);
       expect(Progress.sessionPctTenths({1: 10}, {}), isNull);
+    });
+  });
+
+  group('sessionPctByKind', () {
+    test('a strength-only session matches sessionPctTenths', () {
+      final now = {1: 1100, 2: 500};
+      final prev = {1: 1000, 2: 500};
+      expect(
+        Progress.sessionPctByKind(
+          nowStrength: now,
+          previousStrength: prev,
+          nowTimed: {},
+          previousTimed: {},
+        ),
+        equals(Progress.sessionPctTenths(now, prev)),
+      );
+    });
+
+    test('a timed-only session is compared on seconds', () {
+      expect(
+        Progress.sessionPctByKind(
+          nowStrength: {},
+          previousStrength: {},
+          nowTimed: {5: 330}, // 5:30 run
+          previousTimed: {5: 300}, // 5:00 run
+        ),
+        equals(100), // +10.0%
+      );
+    });
+
+    test('mixed sessions average the two kinds instead of adding units', () {
+      // strength +10.0%, timed -20.0% -> average -5.0%
+      expect(
+        Progress.sessionPctByKind(
+          nowStrength: {1: 1100},
+          previousStrength: {1: 1000},
+          nowTimed: {5: 240},
+          previousTimed: {5: 300},
+        ),
+        equals(-50),
+      );
+    });
+
+    test('a kind with nothing in common is ignored, not counted as zero', () {
+      expect(
+        Progress.sessionPctByKind(
+          nowStrength: {1: 1100},
+          previousStrength: {1: 1000},
+          nowTimed: {5: 240}, // a timed exercise that is new this time
+          previousTimed: {6: 300},
+        ),
+        equals(100),
+      );
+    });
+
+    test('nothing comparable gives null', () {
+      expect(
+        Progress.sessionPctByKind(
+          nowStrength: {},
+          previousStrength: {},
+          nowTimed: {},
+          previousTimed: {},
+        ),
+        isNull,
+      );
     });
   });
 

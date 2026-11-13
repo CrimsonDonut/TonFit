@@ -25,6 +25,10 @@ class AppDatabase extends _$AppDatabase {
   /// Pass an executor in tests (e.g. an in-memory database).
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
+  /// Version 1 is the schema of the first public release. From then on, any
+  /// change to tables.dart needs: schemaVersion + 1, a new `if (from < N)`
+  /// block in onUpgrade below, and a migration test (see docs/RELEASE.md).
+  /// Never edit an old block: users upgrade from every version they ever had.
   @override
   int get schemaVersion => 1;
 
@@ -33,6 +37,13 @@ class AppDatabase extends _$AppDatabase {
         onCreate: (m) async {
           await m.createAll();
           await seedDefaults(this);
+        },
+        onUpgrade: (m, from, to) async {
+          // Example for a future version 2 that adds a column:
+          //   if (from < 2) {
+          //     await m.addColumn(setEntries, setEntries.someNewColumn);
+          //   }
+          // Nothing to do yet: version 1 is the first released schema.
         },
         beforeOpen: (details) async {
           // Needed for the ON DELETE CASCADE / SET NULL rules in tables.dart.

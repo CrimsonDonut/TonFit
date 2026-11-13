@@ -7,6 +7,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tonfit/data/backup/backup_repository.dart';
 import 'package:tonfit/data/database/app_database.dart';
+import 'package:tonfit/data/database/tables.dart';
+import 'package:tonfit/data/repositories/catalog_repository.dart';
 import 'package:tonfit/data/repositories/session_repository.dart';
 import 'package:tonfit/domain/backup_format.dart';
 import 'package:tonfit/domain/epoch_day.dart';
@@ -139,7 +141,10 @@ Future<Map<String, Object?>> portable(Env env) async {
 }
 
 void main() {
+  // These tests open two separate in-memory databases on purpose (the original
+  // and the restore target), so Drift's multiple-database warning is noise.
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+
   setUp(() => tmp = Directory.systemTemp.createTempSync('tonfit_test_'));
   tearDown(() => tmp.deleteSync(recursive: true));
 
@@ -227,13 +232,13 @@ void main() {
     await a.backup.exportCsv(file);
     final lines = file.readAsLinesSync();
 
-    expect(lines.first, equals('date,program,exercise,set,weight_kg,reps'));
+    expect(lines.first, equals('date,program,exercise,set,weight_kg,reps,seconds'));
     // 2 + 2 sets on the 19th, 1 on the 21st, 2 + 1 on the 26th.
     expect(lines.length, equals(1 + 8));
-    expect(lines, contains('2026-10-19,Push,Bench Press,1,60,10'));
-    expect(lines, contains('2026-10-19,Push,Dips,1,,12')); // pure bodyweight
-    expect(lines, contains('2026-10-19,Push,Dips,2,10,8')); // BW + 10 kg
-    expect(lines, contains('2026-10-26,Push,Bench Press,1,62.5,8'));
+    expect(lines, contains('2026-10-19,Push,Bench Press,1,60,10,'));
+    expect(lines, contains('2026-10-19,Push,Dips,1,,12,')); // pure bodyweight
+    expect(lines, contains('2026-10-19,Push,Dips,2,10,8,')); // BW + 10 kg
+    expect(lines, contains('2026-10-26,Push,Bench Press,1,62.5,8,'));
   });
 
   test('a long history is exported across several batches in order', () async {
@@ -258,5 +263,52 @@ void main() {
     final days = [for (final s in data.sessions) s.day];
     expect(days, equals([...days]..sort()));
     expect(days.toSet().length, equals(120));
+  });
+
+  test('timed and sport exercises survive a backup, and the CSV uses seconds', () async {
+    final a = Env();
+    final b = Env();
+    addTearDown(a.db.close);
+    addTearDown(b.db.close);
+
+    final push = (await (a.db.select(a.db.programs)
+              ..where((t) => t.name.equals('Push')))
+            .getSingle())
+        .id;
+    final catalog = CatalogRepository(a.db);
+    final plank = await catalog.createExercise(
+        programId: push, name: 'Plank', type: ExerciseType.timed);
+    final basketball = await catalog.createExercise(
+        programId: push, name: 'Basketball', type: ExerciseType.sport);
+
+    final day = EpochDay.fromDate(DateTime(2026, 10, 19));
+    final sid = await a.sessions.startSession(programId: push, day: day);
+    for (final (exerciseId, seconds) in [(plank, 60), (basketball, 5400)]) {
+      final logId =
+          await a.sessions.addExercise(sessionId: sid, exerciseId: exerciseId);
+      await a.sessions.addSet(
+        exerciseLogId: logId,
+        weight: null,
+        reps: seconds,
+        at: DateTime(2026, 10, 19, 18),
+      );
+    }
+
+    final json = File('${tmp.path}/types.json.gz');
+    await a.backup.exportJson(json, now: clock);
+    await b.backup.restore(b.backup.read(json.readAsBytesSync()));
+
+    final types = {
+      for (final e in await b.db.select(b.db.exercises).get()) e.name: e.type,
+    };
+    expect(types['Plank'], equals(ExerciseType.timed));
+    expect(types['Basketball'], equals(ExerciseType.sport));
+    expect(await portable(b), equals(await portable(a)));
+
+    final csv = File('${tmp.path}/types.csv');
+    await a.backup.exportCsv(csv);
+    final lines = csv.readAsLinesSync();
+    expect(lines, contains('2026-10-19,Push,Plank,1,,,60'));
+    expect(lines, contains('2026-10-19,Push,Basketball,1,,,5400'));
   });
 }

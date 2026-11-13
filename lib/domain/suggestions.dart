@@ -1,3 +1,4 @@
+import 'exercise_type.dart';
 import 'progress.dart';
 
 /// One logged occurrence of an exercise, as the suggestion rules see it.
@@ -13,12 +14,12 @@ class ExerciseSession {
   factory ExerciseSession.fromSets(
     int day,
     List<SetData> sets, {
-    bool bodyweight = false,
+    ExerciseType type = ExerciseType.weighted,
     int bodyweightRef = Progress.defaultBodyweightRef,
   }) {
     final m = Progress.metrics(
       sets,
-      bodyweight: bodyweight,
+      type: type,
       bodyweightRef: bodyweightRef,
     );
     return ExerciseSession(
@@ -53,9 +54,13 @@ class SuggestionContext {
     required this.history,
     this.priorBests,
     this.extras = const {},
+    this.timeBased = false,
   });
 
   final String exerciseName;
+
+  /// A timed exercise: tips talk about time instead of reps and weight.
+  final bool timeBased;
   final List<ExerciseSession> history;
   final PriorBests? priorBests;
   final Map<String, Object?> extras;
@@ -159,7 +164,7 @@ Map<String, Object?>? _stall(SuggestionContext ctx, SuggestionConfig cfg) {
   for (var i = 1; identical && i < cfg.identicalSessions; i++) {
     identical = _sameSets(h[0], h[i]);
   }
-  return {'sessions': n, 'identical': identical};
+  return {'sessions': n, 'identical': identical, 'timeBased': ctx.timeBased};
 }
 
 /// The starter rules (requirements section 3.4). New rules, including ones
@@ -230,9 +235,10 @@ String suggestionMessage(SuggestionHit hit) {
       final base =
           '$name hasn’t progressed in ${hit.params['sessions']} sessions. '
           'Are you eating enough and sleeping well?';
-      return hit.params['identical'] == true
-          ? '$base Try adding 1–2 reps or a small weight increase.'
-          : base;
+      if (hit.params['identical'] != true) return base;
+      return hit.params['timeBased'] == true
+          ? '$base Try adding 5–10 seconds.'
+          : '$base Try adding 1–2 reps or a small weight increase.';
     default:
       return '';
   }

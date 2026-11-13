@@ -2,6 +2,9 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tonfit/data/database/app_database.dart';
+import 'package:tonfit/data/database/tables.dart';
+import 'package:tonfit/data/queries/workout_queries.dart';
+import 'package:tonfit/data/repositories/catalog_repository.dart';
 import 'package:tonfit/data/repositories/session_repository.dart';
 import 'package:tonfit/domain/epoch_day.dart';
 
@@ -453,5 +456,126 @@ void main() {
     final past = await sessionRow(a);
     expect(past.timeIn, isNull);
     expect(past.timeOut, isNull);
+  });
+
+  test('exercises can be reordered, and the order sticks', () async {
+    final sid = await workout('Push', at(10, 19), {
+      'Bench Press': [(60, 10)],
+      'Overhead Press': [(40, 8)],
+      'Dips': [(0, 12)],
+    });
+    final queries = WorkoutQueries(db);
+    final day = EpochDay.fromDate(DateTime(2026, 10, 19));
+    Future<List<String>> names() async => [
+          for (final v in (await queries.loadDay(day))!.logs) v.exercise.name,
+        ];
+
+    expect(await names(), equals(['Bench Press', 'Overhead Press', 'Dips']));
+
+    final bench = await logOf(sid, 'Push', 'Bench Press');
+    final ohp = await logOf(sid, 'Push', 'Overhead Press');
+    final dips = await logOf(sid, 'Push', 'Dips');
+    await repo.reorderExercises(
+      sessionId: sid,
+      orderedLogIds: [dips.id, bench.id, ohp.id],
+    );
+    expect(await names(), equals(['Dips', 'Bench Press', 'Overhead Press']));
+
+    // Reordering changes nothing but the order.
+    final after = await logOf(sid, 'Push', 'Bench Press');
+    expect(after.volume, equals(bench.volume));
+    expect(after.pct, equals(bench.pct));
+
+    // An exercise added later goes to the end.
+    final incline = await exerciseId('Push', 'Incline Dumbbell Press');
+    await repo.addExercise(sessionId: sid, exerciseId: incline);
+    expect(await names(),
+        equals(['Dips', 'Bench Press', 'Overhead Press', 'Incline Dumbbell Press']));
+  });
+
+  group('timed and sport exercises', () {
+    late int push;
+
+    Future<int> create(String name, ExerciseType type) =>
+        CatalogRepository(db).createExercise(
+          programId: push,
+          name: name,
+          type: type,
+        );
+
+    Future<int> addLog(int sid, int exerciseId, List<int> seconds) async {
+      final logId = await repo.addExercise(sessionId: sid, exerciseId: exerciseId);
+      for (final secs in seconds) {
+        await repo.addSet(exerciseLogId: logId, weight: null, reps: secs);
+      }
+      return logId;
+    }
+
+    Future<int> session(DateTime when) async {
+      now = when;
+      return repo.startSession(programId: push);
+    }
+
+    setUp(() async => push = await programId('Push'));
+
+    test('a longer hold shows as a gain and a personal best', () async {
+      final plank = await create('Plank', ExerciseType.timed);
+      await addLog(await session(at(10, 19)), plank, [60, 60]); // 120 s
+      final s2 = await session(at(10, 26));
+      final l2 = await addLog(s2, plank, [60, 75]); // 135 s
+
+      final log = await (db.select(db.exerciseLogs)..where((t) => t.id.equals(l2)))
+          .getSingle();
+      expect(log.volume, equals(135));
+      expect(log.bestWeight, equals(0));
+      expect(log.repsAtTop, equals(75)); // the longest single hold
+      expect(log.pct, equals(125)); // +12.5% total time
+      expect((await sessionRow(s2)).summaryPct, equals(125));
+      expect((await suggestionsFor(s2)).single.ruleId, equals('pr'));
+    });
+
+    test('sport has no percentage and no suggestions, but still counts as a day', () async {
+      final basketball = await create('Basketball', ExerciseType.sport);
+      await addLog(await session(at(10, 19)), basketball, [5400]); // 90 min
+      final s2 = await session(at(10, 26));
+      final l2 = await addLog(s2, basketball, [7200]); // 120 min
+
+      final log = await (db.select(db.exerciseLogs)..where((t) => t.id.equals(l2)))
+          .getSingle();
+      expect(log.volume, equals(7200));
+      expect(log.pct, isNull);
+      expect((await sessionRow(s2)).summaryPct, isNull);
+      expect(await suggestionsFor(s2), isEmpty);
+
+      final day = await (db.select(db.daySummaries)
+            ..where((t) => t.day.equals(EpochDay.fromDate(DateTime(2026, 10, 26)))))
+          .getSingle();
+      expect(day.setCount, equals(1)); // shows on the heatmap
+    });
+
+    test('a session mixing strength and timed work averages the two', () async {
+      final plank = await create('Plank', ExerciseType.timed);
+      final bench = await exerciseId('Push', 'Bench Press');
+
+      final s1 = await session(at(10, 19));
+      await repo.addSet(
+        exerciseLogId: await repo.addExercise(sessionId: s1, exerciseId: bench),
+        weight: 6000,
+        reps: 10,
+      );
+      await addLog(s1, plank, [60]);
+
+      final s2 = await session(at(10, 26));
+      await repo.addSet(
+        exerciseLogId: await repo.addExercise(sessionId: s2, exerciseId: bench),
+        weight: 6600,
+        reps: 10,
+      );
+      await addLog(s2, plank, [48]);
+
+      // Strength +10.0%, timed -20.0%: kg x reps and seconds are never added
+      // together, so the session is their average, -5.0%.
+      expect((await sessionRow(s2)).summaryPct, equals(-50));
+    });
   });
 }

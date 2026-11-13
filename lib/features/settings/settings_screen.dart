@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_info.dart';
 import '../../core/format.dart';
@@ -86,7 +87,25 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => context.push('/settings/backup'),
           ),
           const Divider(),
-          const SizedBox(height: 48),
+          if (privacyPolicyUrl.isNotEmpty) ...[
+            _NavRow(
+              title: 'Privacy policy',
+              subtitle: 'How TonFit handles your data',
+              onTap: () => launchUrl(
+                Uri.parse(privacyPolicyUrl),
+                mode: LaunchMode.externalApplication,
+              ),
+            ),
+            const Divider(),
+          ],
+          const SizedBox(height: 32),
+          Text(
+            'TonFit keeps your workouts on this device only. Suggestions are '
+            'general fitness tips, not medical advice.',
+            style: text.bodySmall,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
           Center(child: Text('TonFit v$appVersion', style: text.bodySmall)),
           const SizedBox(height: 24),
         ],

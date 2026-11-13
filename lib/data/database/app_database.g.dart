@@ -2148,8 +2148,11 @@ class SetEntry extends DataClass implements Insertable<SetEntry> {
   /// 1-based position within the exercise; shown as "1.", "2.", ...
   final int idx;
 
-  /// Null for pure bodyweight sets. For "BW + 10 kg" this holds the added weight.
+  /// Null for pure bodyweight sets and for timed and sport exercises. For
+  /// "BW + 10 kg" this holds the added weight.
   final int? weight;
+
+  /// Repetitions, or for timed and sport exercises the duration in seconds.
   final int reps;
   const SetEntry({
     required this.id,

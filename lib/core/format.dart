@@ -1,3 +1,4 @@
+import '../domain/exercise_type.dart';
 import '../domain/weight.dart';
 
 const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -35,18 +36,35 @@ abstract final class Fmt {
   static String weightText(int stored, WeightUnit unit) =>
       '${Weight.format(stored, unit)} ${unit.name}';
 
-  /// "60 kg × 10", "BW × 12" or "BW + 10 kg × 8".
+  /// A timer reading: "1:30", or "1:02:05" past an hour.
+  static String clockTime(int seconds) {
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:$s';
+    return '$m:$s';
+  }
+
+  /// One set as text. Weighted: "60 kg × 10". Bodyweight: "BW × 12" or
+  /// "BW + 10 kg × 8". Timed: "1:30". Sport: "1h 30m". For timed and sport,
+  /// [reps] holds the duration in seconds.
   static String setLabel({
     required int? weight,
     required int reps,
-    required bool bodyweight,
+    required ExerciseType type,
     required WeightUnit unit,
   }) {
-    if (bodyweight) {
-      if (weight == null || weight == 0) return 'BW × $reps';
-      return 'BW + ${weightText(weight, unit)} × $reps';
+    switch (type) {
+      case ExerciseType.sport:
+        return duration(reps);
+      case ExerciseType.timed:
+        return clockTime(reps);
+      case ExerciseType.bodyweight:
+        if (weight == null || weight == 0) return 'BW × $reps';
+        return 'BW + ${weightText(weight, unit)} × $reps';
+      case ExerciseType.weighted:
+        return '${weightText(weight ?? 0, unit)} × $reps';
     }
-    return '${weightText(weight ?? 0, unit)} × $reps';
   }
 
   static String plural(int n, String word) => n == 1 ? '$n $word' : '$n ${word}s';

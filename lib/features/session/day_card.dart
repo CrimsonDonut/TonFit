@@ -55,10 +55,61 @@ class PctBadge extends StatelessWidget {
 /// The body of a day: summary line, time in/out, every exercise with its sets,
 /// "+ Add exercise", and suggestion messages. Used on the dashboard (today)
 /// and on the day screen (any past day).
-class DayCard extends ConsumerWidget {
+class DayCard extends ConsumerStatefulWidget {
   const DayCard({super.key, required this.detail});
 
   final DayDetail detail;
+
+  @override
+  ConsumerState<DayCard> createState() => _DayCardState();
+}
+
+class _DayCardState extends ConsumerState<DayCard> {
+  DayDetail get detail => widget.detail;
+
+  /// Exercise-log ids in the order just chosen by dragging. Shown straight away
+  /// so the list doesn't snap back while the database catches up, and dropped
+  /// once the database order matches it.
+  List<int>? _localOrder;
+
+  @override
+  void didUpdateWidget(covariant DayCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final local = _localOrder;
+    if (local == null) return;
+    final saved = [for (final v in widget.detail.logs) v.log.id];
+    if (saved.length == local.length) {
+      var same = true;
+      for (var i = 0; i < saved.length; i++) {
+        if (saved[i] != local[i]) same = false;
+      }
+      if (same) _localOrder = null;
+    }
+  }
+
+  List<ExerciseLogView> _ordered() {
+    final local = _localOrder;
+    if (local == null) return detail.logs;
+    final byId = {for (final v in detail.logs) v.log.id: v};
+    return [
+      for (final id in local)
+        if (byId[id] != null) byId[id]!,
+      // Anything added since the drag goes at the end.
+      ...detail.logs.where((v) => !local.contains(v.log.id)),
+    ];
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex -= 1;
+    final ids = [for (final v in _ordered()) v.log.id];
+    final moved = ids.removeAt(oldIndex);
+    ids.insert(newIndex, moved);
+    setState(() => _localOrder = ids);
+    ref.read(sessionRepositoryProvider).reorderExercises(
+          sessionId: detail.session.id,
+          orderedLogIds: ids,
+        );
+  }
 
   /// Pick time in, then time out. A time out at or before the time in is taken
   /// to be after midnight (the next day).
@@ -119,7 +170,7 @@ class DayCard extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final unit = ref.watch(weightUnitProvider);
     final session = detail.session;
@@ -170,10 +221,30 @@ class DayCard extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         const Divider(),
-        for (final view in detail.logs) ...[
-          _ExerciseSection(view: view, unit: unit),
-          const Divider(),
-        ],
+        // Press and hold an exercise, then drag it to a new place.
+        ReorderableListView(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          onReorder: _onReorder,
+          proxyDecorator: (child, index, animation) => Material(
+            color: AppColors.surface,
+            elevation: 4,
+            shadowColor: Colors.black,
+            borderRadius: BorderRadius.circular(AppRadius.input),
+            child: child,
+          ),
+          children: [
+            for (final view in _ordered())
+              Column(
+                key: ValueKey(view.log.id),
+                children: [
+                  _ExerciseSection(view: view, unit: unit),
+                  const Divider(),
+                ],
+              ),
+          ],
+        ),
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
@@ -182,6 +253,14 @@ class DayCard extends ConsumerWidget {
             label: const Text('Add exercise'),
           ),
         ),
+        if (detail.logs.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              'Press and hold an exercise to change its order.',
+              style: text.bodySmall,
+            ),
+          ),
         if (detail.messages.isNotEmpty) ...[
           const SizedBox(height: 8),
           Container(
@@ -224,10 +303,10 @@ class _ExerciseSection extends ConsumerWidget {
   final ExerciseLogView view;
   final WeightUnit unit;
 
-  String _label(int? weight, int reps, bool bodyweight) => Fmt.setLabel(
+  String _label(int? weight, int reps) => Fmt.setLabel(
         weight: weight,
         reps: reps,
-        bodyweight: bodyweight,
+        type: view.exercise.type,
         unit: unit,
       );
 
@@ -248,7 +327,10 @@ class _ExerciseSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
-    final bodyweight = view.exercise.type == ExerciseType.bodyweight;
+    final type = view.exercise.type;
+    final isSport = type == ExerciseType.sport;
+    // Sport has no percentage; its header shows the total time played.
+    final totalSeconds = view.sets.fold<int>(0, (a, s) => a + s.reps);
 
     return Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 4),
@@ -258,7 +340,10 @@ class _ExerciseSection extends ConsumerWidget {
           Row(
             children: [
               Expanded(child: Text(view.exercise.name, style: text.titleMedium)),
-              if (view.sets.isNotEmpty) PctBadge(view.log.pct),
+              if (view.sets.isNotEmpty && type.tracksProgress)
+                PctBadge(view.log.pct)
+              else if (view.sets.isNotEmpty && isSport)
+                Text(Fmt.duration(totalSeconds), style: text.bodySmall),
               PopupMenuButton<String>(
                 tooltip: 'Exercise options',
                 icon: const Icon(Icons.more_vert,
@@ -283,14 +368,14 @@ class _ExerciseSection extends ConsumerWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
                 child: Text(
-                  '${s.idx}. ${_label(s.weight, s.reps, bodyweight)}',
+                  '${s.idx}. ${_label(s.weight, s.reps)}',
                   style: text.bodyLarge,
                 ),
               ),
             ),
           TextButton(
             onPressed: () => showAddSetSheet(context, view: view),
-            child: const Text('+ Add set'),
+            child: Text(isSport ? '+ Add time' : '+ Add set'),
           ),
         ],
       ),

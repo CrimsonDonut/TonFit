@@ -39,7 +39,7 @@ class BackupExercise {
   final int programId;
   final String name;
 
-  /// 'weighted' or 'bodyweight'.
+  /// 'weighted', 'bodyweight', 'timed' or 'sport'.
   final String type;
   final bool archived;
 
@@ -55,8 +55,11 @@ class BackupExercise {
 class BackupSet {
   const BackupSet({required this.weight, required this.reps});
 
-  /// Hundredths of a kilogram; null for a pure bodyweight set.
+  /// Hundredths of a kilogram; null for a pure bodyweight set and for timed
+  /// and sport exercises.
   final int? weight;
+
+  /// Repetitions, or for timed and sport exercises the duration in seconds.
   final int reps;
 
   /// Compact form: [weight, reps].
@@ -298,7 +301,8 @@ abstract final class BackupFormat {
 
   // --- CSV -------------------------------------------------------------------
 
-  static const String csvHeader = 'date,program,exercise,set,weight_kg,reps\n';
+  static const String csvHeader =
+      'date,program,exercise,set,weight_kg,reps,seconds\n';
 
   /// Escapes one CSV field (quotes when it contains a comma, quote or newline).
   static String csvField(String value) {
@@ -323,6 +327,8 @@ abstract final class BackupFormat {
     return s;
   }
 
+  /// One set. Strength rows fill weight and reps; timed and sport rows fill
+  /// only the seconds column.
   static String csvRow({
     required int day,
     required String program,
@@ -330,9 +336,13 @@ abstract final class BackupFormat {
     required int setNumber,
     required int? weight,
     required int reps,
+    bool timeBased = false,
   }) {
-    return '${_dateLabel(day)},${csvField(program)},${csvField(exercise)},'
-        '$setNumber,${kgText(weight)},$reps\n';
+    final head = '${_dateLabel(day)},${csvField(program)},${csvField(exercise)},'
+        '$setNumber,';
+    return timeBased
+        ? '$head,,$reps\n'
+        : '$head${kgText(weight)},$reps,\n';
   }
 
   // --- helpers ---------------------------------------------------------------
@@ -379,7 +389,9 @@ abstract final class BackupFormat {
   static bool _bool(Object? v) => v == true;
 
   static String _type(Object? v) {
-    if (v == 'weighted' || v == 'bodyweight') return v as String;
+    if (v == 'weighted' || v == 'bodyweight' || v == 'timed' || v == 'sport') {
+      return v as String;
+    }
     throw const FormatException('An exercise has an unknown type.');
   }
 }

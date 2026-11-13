@@ -190,6 +190,25 @@ class SessionRepository {
     });
   }
 
+  /// Saves a new order for a session's exercises: [orderedLogIds] lists the
+  /// exercise-log ids from first to last. Ids that don't belong to the session
+  /// are ignored. Order is display-only, so nothing else needs recalculating
+  /// except the suggestion list, which follows exercise order for ties.
+  Future<void> reorderExercises({
+    required int sessionId,
+    required List<int> orderedLogIds,
+  }) {
+    return db.transaction(() async {
+      for (var i = 0; i < orderedLogIds.length; i++) {
+        await (db.update(db.exerciseLogs)
+              ..where((t) =>
+                  t.id.equals(orderedLogIds[i]) & t.sessionId.equals(sessionId)))
+            .write(ExerciseLogsCompanion(sortOrder: Value(i)));
+      }
+      await _refreshSuggestions(sessionId);
+    });
+  }
+
   /// Deletes a whole session with its exercises and sets, then repairs
   /// everything that depended on it: the next sessions' percentages and links,
   /// personal bests, suggestions, the heatmap day, the week count and the
@@ -344,7 +363,7 @@ class SessionRepository {
     final sets = await _sets(logId);
     final m = Progress.metrics(
       sets,
-      bodyweight: exercise.type == ExerciseType.bodyweight,
+      type: exercise.type,
     );
     await (db.update(db.exerciseLogs)..where((t) => t.id.equals(logId))).write(
       ExerciseLogsCompanion(
@@ -368,8 +387,13 @@ class SessionRepository {
           ..orderBy([(t) => OrderingTerm.desc(t.day)])
           ..limit(1))
         .getSingleOrNull();
-    final pct =
-        log.setCount == 0 ? null : Progress.pctTenths(log.volume, prev?.volume);
+    final exercise = await (db.select(db.exercises)
+          ..where((t) => t.id.equals(log.exerciseId)))
+        .getSingle();
+    // Sport has nothing to compare, and an empty log has no result yet.
+    final pct = (log.setCount == 0 || !exercise.type.tracksProgress)
+        ? null
+        : Progress.pctTenths(log.volume, prev?.volume);
     await (db.update(db.exerciseLogs)..where((t) => t.id.equals(logId))).write(
       ExerciseLogsCompanion(prevLogId: Value(prev?.id), pct: Value(pct)),
     );
@@ -419,9 +443,28 @@ class SessionRepository {
             ..where((t) =>
                 t.sessionId.equals(prev.id) & t.setCount.isBiggerThanValue(0)))
           .get();
-      pct = Progress.sessionPctTenths(
-        {for (final l in active) l.exerciseId: l.volume},
-        {for (final l in prevLogs) l.exerciseId: l.volume},
+      // Volume (kg x reps) and seconds can't be added, so each kind of work
+      // is compared on its own and the results averaged. Sport is left out.
+      final ids = {for (final l in [...active, ...prevLogs]) l.exerciseId};
+      final types = {
+        for (final e in await (db.select(db.exercises)
+              ..where((t) => t.id.isIn(ids)))
+            .get())
+          e.id: e.type,
+      };
+      Map<int, int> volumes(
+        List<ExerciseLog> logs,
+        bool Function(ExerciseType) pick,
+      ) =>
+          {
+            for (final l in logs)
+              if (pick(types[l.exerciseId]!)) l.exerciseId: l.volume,
+          };
+      pct = Progress.sessionPctByKind(
+        nowStrength: volumes(active, (t) => t.isStrength),
+        previousStrength: volumes(prevLogs, (t) => t.isStrength),
+        nowTimed: volumes(active, (t) => t == ExerciseType.timed),
+        previousTimed: volumes(prevLogs, (t) => t == ExerciseType.timed),
       );
     }
 
@@ -596,6 +639,7 @@ class SessionRepository {
       final exercise = await (db.select(db.exercises)
             ..where((t) => t.id.equals(log.exerciseId)))
           .getSingle();
+      if (!exercise.type.tracksProgress) continue; // sport: nothing to suggest
       final recent = await (db.select(db.exerciseLogs)
             ..where((t) =>
                 t.exerciseId.equals(log.exerciseId) &
@@ -616,6 +660,7 @@ class SessionRepository {
       }
       contexts.add(SuggestionContext(
         exerciseName: exercise.name,
+        timeBased: exercise.type.isTimeBased,
         history: history,
         priorBests: await _bests(log.exerciseId, beforeDay: session.day),
       ));

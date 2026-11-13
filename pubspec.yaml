@@ -1,7 +1,7 @@
 name: tonfit
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.1.0+1
+version: 1.0.0+1
 
 environment:
   sdk: ^3.11.0
@@ -17,6 +17,7 @@ dependencies:
   path_provider: ^2.1.6
   share_plus: ^13.3.1
   shared_preferences: ^2.5.6
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:

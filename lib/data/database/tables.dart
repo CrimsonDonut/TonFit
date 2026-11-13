@@ -1,5 +1,11 @@
 import 'package:drift/drift.dart';
 
+import '../../domain/exercise_type.dart';
+
+// The exercise kinds live in the domain layer (they are plain rules, not
+// database details). Re-exported so existing imports of this file keep working.
+export '../../domain/exercise_type.dart';
+
 // Database tables (requirements, section 5).
 //
 // Units used everywhere:
@@ -11,8 +17,6 @@ import 'package:drift/drift.dart';
 //
 // SET_ENTRY is the source of truth. Every other "summary" column is a cache
 // that can be rebuilt from it (requirements NFR-10).
-
-enum ExerciseType { weighted, bodyweight }
 
 @DataClassName('Program')
 class Programs extends Table {
@@ -107,8 +111,10 @@ class SetEntries extends Table {
   /// 1-based position within the exercise; shown as "1.", "2.", ...
   IntColumn get idx => integer()();
 
-  /// Null for pure bodyweight sets. For "BW + 10 kg" this holds the added weight.
+  /// Null for pure bodyweight sets and for timed and sport exercises. For
+  /// "BW + 10 kg" this holds the added weight.
   IntColumn get weight => integer().nullable()();
+  /// Repetitions, or for timed and sport exercises the duration in seconds.
   IntColumn get reps => integer()();
 
   @override

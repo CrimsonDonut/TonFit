@@ -199,9 +199,49 @@ void main() {
     });
   });
 
+  group('timed and sport in a backup', () {
+    test('the new exercise types round-trip', () {
+      const d = BackupData(
+        version: 1,
+        exportedAt: 'x',
+        settings: {},
+        programs: [BackupProgram(id: 1, name: 'Cardio', sortOrder: 0, archived: false)],
+        exercises: [
+          BackupExercise(id: 1, programId: 1, name: 'Plank', type: 'timed', archived: false),
+          BackupExercise(id: 2, programId: 1, name: 'Basketball', type: 'sport', archived: false),
+        ],
+        restDays: [],
+        sessions: [
+          BackupSession(day: 20750, programId: 1, timeIn: null, timeOut: null, logs: [
+            BackupLog(exerciseId: 1, sets: [BackupSet(weight: null, reps: 60)]),
+            BackupLog(exerciseId: 2, sets: [BackupSet(weight: null, reps: 5400)]),
+          ]),
+        ],
+      );
+      final parsed = BackupFormat.parse(BackupFormat.encode(d));
+      expect(parsed.exercises.map((e) => e.type).toList(), equals(['timed', 'sport']));
+      expect(parsed.sessions.single.logs[1].sets.single.reps, equals(5400));
+    });
+
+    test('a timed row fills only the seconds column', () {
+      expect(
+        BackupFormat.csvRow(
+          day: 20750,
+          program: 'Cardio',
+          exercise: 'Plank',
+          setNumber: 2,
+          weight: null,
+          reps: 90,
+          timeBased: true,
+        ),
+        equals('2026-10-24,Cardio,Plank,2,,,90\n'),
+      );
+    });
+  });
+
   group('CSV', () {
     test('header and escaping', () {
-      expect(BackupFormat.csvHeader, equals('date,program,exercise,set,weight_kg,reps\n'));
+      expect(BackupFormat.csvHeader, equals('date,program,exercise,set,weight_kg,reps,seconds\n'));
       expect(BackupFormat.csvField('Bench Press'), equals('Bench Press'));
       expect(BackupFormat.csvField('Pull, heavy'), equals('"Pull, heavy"'));
       expect(BackupFormat.csvField('The "big" one'), equals('"The ""big"" one"'));
@@ -227,7 +267,7 @@ void main() {
           weight: 5750,
           reps: 8,
         ),
-        equals('2026-10-24,Push,Bench Press,2,57.5,8\n'),
+        equals('2026-10-24,Push,Bench Press,2,57.5,8,\n'),
       );
       expect(
         BackupFormat.csvRow(
@@ -238,7 +278,7 @@ void main() {
           weight: null,
           reps: 12,
         ),
-        equals('2026-10-19,"Pull, heavy",Pull-Up,1,,12\n'),
+        equals('2026-10-19,"Pull, heavy",Pull-Up,1,,12,\n'),
       );
     });
   });

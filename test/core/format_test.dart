@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tonfit/core/format.dart';
+import 'package:tonfit/domain/exercise_type.dart';
 import 'package:tonfit/domain/weight.dart';
 
 int secs(int h, int m) =>
@@ -27,14 +28,33 @@ void main() {
     });
 
     test('set labels', () {
-      String label(int? w, int r, {bool bw = false, WeightUnit u = WeightUnit.kg}) =>
-          Fmt.setLabel(weight: w, reps: r, bodyweight: bw, unit: u);
+      String label(int? w, int r,
+              {ExerciseType t = ExerciseType.weighted,
+              WeightUnit u = WeightUnit.kg}) =>
+          Fmt.setLabel(weight: w, reps: r, type: t, unit: u);
       expect(label(6000, 10), equals('60 kg × 10'));
       expect(label(5750, 8), equals('57.5 kg × 8'));
-      expect(label(null, 12, bw: true), equals('BW × 12'));
-      expect(label(0, 12, bw: true), equals('BW × 12'));
-      expect(label(1000, 8, bw: true), equals('BW + 10 kg × 8'));
+      expect(label(null, 12, t: ExerciseType.bodyweight), equals('BW × 12'));
+      expect(label(0, 12, t: ExerciseType.bodyweight), equals('BW × 12'));
+      expect(label(1000, 8, t: ExerciseType.bodyweight), equals('BW + 10 kg × 8'));
       expect(label(6124, 5, u: WeightUnit.lb), equals('135 lb × 5'));
+    });
+
+    test('timed and sport sets show a duration', () {
+      String label(int s, ExerciseType t) =>
+          Fmt.setLabel(weight: null, reps: s, type: t, unit: WeightUnit.kg);
+      expect(label(90, ExerciseType.timed), equals('1:30'));
+      expect(label(5, ExerciseType.timed), equals('0:05'));
+      expect(label(3725, ExerciseType.timed), equals('1:02:05'));
+      expect(label(5400, ExerciseType.sport), equals('1h 30m'));
+      expect(label(2700, ExerciseType.sport), equals('45m'));
+    });
+
+    test('clock time', () {
+      expect(Fmt.clockTime(0), equals('0:00'));
+      expect(Fmt.clockTime(59), equals('0:59'));
+      expect(Fmt.clockTime(600), equals('10:00'));
+      expect(Fmt.clockTime(3600), equals('1:00:00'));
     });
 
     test('plural', () {

@@ -79,9 +79,7 @@ class ProgramDetailScreen extends ConsumerWidget {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  e.type == ExerciseType.bodyweight
-                                      ? 'Bodyweight'
-                                      : 'Weighted',
+                                  e.type.label,
                                   style: text.bodySmall,
                                 ),
                               ],

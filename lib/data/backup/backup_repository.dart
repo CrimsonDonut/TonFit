@@ -93,6 +93,7 @@ class BackupRepository {
                 setNumber: i + 1,
                 weight: log.sets[i].weight,
                 reps: log.sets[i].reps,
+                timeBased: _isTimeBased(exercises[log.exerciseId]?.type),
               ));
             }
           }
@@ -102,6 +103,8 @@ class BackupRepository {
       await sink.close();
     }
   }
+
+  static bool _isTimeBased(String? type) => type == 'timed' || type == 'sport';
 
   Future<List<BackupProgram>> _programs() async {
     final rows = await (db.select(db.programs)

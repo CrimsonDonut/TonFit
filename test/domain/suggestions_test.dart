@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tonfit/domain/exercise_type.dart';
 import 'package:tonfit/domain/progress.dart';
 import 'package:tonfit/domain/suggestions.dart';
 
@@ -55,6 +56,36 @@ void main() {
         s(4, flat(40)), s(3, flat(40)), s(2, flat(42)), s(1, flat(40)),
       ]));
       expect(hit, isNull);
+    });
+  });
+
+  group('timed exercises', () {
+    List<SetData> hold(int seconds) =>
+        [SetData(null, seconds), SetData(null, seconds)];
+
+    ExerciseSession plank(int day, int seconds) =>
+        ExerciseSession.fromSets(day, hold(seconds), type: ExerciseType.timed);
+
+    test('a stall talks about time, not reps', () {
+      final hit = engine.evaluate(SuggestionContext(
+        exerciseName: 'Plank',
+        timeBased: true,
+        history: [plank(4, 60), plank(3, 60), plank(2, 60), plank(1, 60)],
+      ));
+      expect(hit?.ruleId, equals('stall'));
+      final message = suggestionMessage(hit!);
+      expect(message, contains('Try adding 5–10 seconds'));
+      expect(message, isNot(contains('reps')));
+    });
+
+    test('a longer hold than ever before is a personal best', () {
+      final hit = engine.evaluate(SuggestionContext(
+        exerciseName: 'Plank',
+        timeBased: true,
+        history: [plank(2, 90)],
+        priorBests: const PriorBests(maxWeight: 0, repsAtMaxWeight: 60),
+      ));
+      expect(hit?.ruleId, equals('pr'));
     });
   });
 
@@ -117,7 +148,7 @@ void main() {
     test('bodyweight PR is judged on reps', () {
       final hit = engine.evaluate(ctx(
         [
-          ExerciseSession.fromSets(2, const [SetData(null, 12)], bodyweight: true),
+          ExerciseSession.fromSets(2, const [SetData(null, 12)], type: ExerciseType.bodyweight),
         ],
         name: 'Pull-Up',
         prior: const PriorBests(maxWeight: 0, repsAtMaxWeight: 10),

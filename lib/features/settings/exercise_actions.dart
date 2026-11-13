@@ -28,7 +28,7 @@ Future<void> showExerciseActions(
           ListTile(
             title: Text(e.name),
             subtitle: Text(
-              e.type == ExerciseType.bodyweight ? 'Bodyweight' : 'Weighted',
+              e.type.label,
             ),
           ),
           const Divider(),

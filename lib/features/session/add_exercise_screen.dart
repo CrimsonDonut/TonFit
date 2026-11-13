@@ -11,6 +11,7 @@ import '../../data/queries/workout_queries.dart';
 import '../../data/repositories/catalog_repository.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../domain/weight.dart';
+import '../settings/dialogs.dart';
 import '../settings/exercise_actions.dart';
 
 /// Pick exercises saved under the session's program, or create a new one.
@@ -46,14 +47,11 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
           title: Text('Create “${_query.trim()}”'),
-          content: SegmentedButton<ExerciseType>(
-            segments: const [
-              ButtonSegment(value: ExerciseType.weighted, label: Text('Weighted')),
-              ButtonSegment(
-                  value: ExerciseType.bodyweight, label: Text('Bodyweight')),
-            ],
-            selected: {type},
-            onSelectionChanged: (s) => setState(() => type = s.first),
+          content: SingleChildScrollView(
+            child: ExerciseTypePicker(
+              value: type,
+              onChanged: (t) => setState(() => type = t),
+            ),
           ),
           actions: [
             TextButton(
@@ -87,10 +85,16 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     final label = Fmt.setLabel(
       weight: o.lastWeight,
       reps: reps,
-      bodyweight: o.exercise.type == ExerciseType.bodyweight,
+      type: o.exercise.type,
       unit: unit,
     );
-    return 'Last logged: $label';
+    // For timed work the stored "best set" is the longest one.
+    final prefix = o.exercise.type == ExerciseType.sport
+        ? 'Last played'
+        : o.exercise.type == ExerciseType.timed
+            ? 'Longest'
+            : 'Last logged';
+    return '$prefix: $label';
   }
 
   @override
