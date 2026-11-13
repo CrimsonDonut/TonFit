@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'epoch_day.dart';
 
-/// Heatmap rules (requirements FR-6, FR-23): which months to show, how big the
+/// Heatmap rules (requirements FR-6, FR-23): which days to show, how big the
 /// cells are, and which tier a day falls in. Pure functions, no Flutter.
 abstract final class Heatmap {
   // --- tiers -----------------------------------------------------------------
@@ -20,41 +20,18 @@ abstract final class Heatmap {
     return tierMax.length + 1;
   }
 
-  // --- which months ----------------------------------------------------------
+  // --- which days ------------------------------------------------------------
 
-  /// First month (1 to 12) to draw for [year], so a new user is not shown a
-  /// mostly empty year: the heatmap starts in the first month with any data,
-  /// or in the current month when there is none yet, and runs to December.
-  ///
-  /// [firstDataDay] is the earliest day with a session or rest mark across all
-  /// years (null when there is no data). Years after the first one always start
-  /// in January.
-  static int startMonth({
-    required int year,
-    required int? firstDataDay,
-    required int today,
-  }) {
-    final now = EpochDay.toDate(today);
-    if (firstDataDay == null) return year == now.year ? now.month : 1;
+  /// Epoch-day of 1 January. The heatmap always shows the whole year, January
+  /// to December, so days logged in the past are never cut off.
+  static int firstDay(int year) => EpochDay.fromDate(DateTime(year, 1, 1));
 
-    final first = EpochDay.toDate(firstDataDay);
-    if (year != first.year) return 1;
-
-    // The first year with data. If it is also the current year, never start
-    // later than the current month.
-    return year == now.year ? math.min(first.month, now.month) : first.month;
-  }
-
-  /// Epoch-day of the first day drawn.
-  static int firstDay(int year, int startMonth) =>
-      EpochDay.fromDate(DateTime(year, startMonth, 1));
-
-  /// Epoch-day of the last day drawn (31 December).
+  /// Epoch-day of 31 December.
   static int lastDay(int year) => EpochDay.fromDate(DateTime(year, 12, 31));
 
-  /// Number of week columns from [startMonth] to the end of the year.
-  static int columns(int year, int startMonth) {
-    final firstWeek = EpochDay.weekStart(firstDay(year, startMonth));
+  /// Number of week columns in the year (53 for the years around now).
+  static int columns(int year) {
+    final firstWeek = EpochDay.weekStart(firstDay(year));
     final lastWeek = EpochDay.weekStart(lastDay(year));
     return (lastWeek - firstWeek) ~/ 7 + 1;
   }

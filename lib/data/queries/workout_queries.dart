@@ -42,14 +42,10 @@ class HeatmapData {
   const HeatmapData({
     required this.year,
     required this.firstYear,
-    required this.firstDataDay,
     required this.setCounts,
   });
   final int year;
 
-  /// Earliest day with a session or rest mark across ALL years, or null when
-  /// there is no data yet. The heatmap starts at that month (requirements FR-6).
-  final int? firstDataDay;
 
   /// First year that has any data, for the year switcher.
   final int firstYear;
@@ -237,7 +233,6 @@ class WorkoutQueries {
     return HeatmapData(
       year: year,
       firstYear: first == null ? year : EpochDay.toDate(first).year,
-      firstDataDay: first,
       setCounts: {for (final r in rows) r.day: r.setCount},
     );
   }

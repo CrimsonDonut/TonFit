@@ -80,19 +80,16 @@ class HeatmapLegend extends StatelessWidget {
   }
 }
 
-/// Geometry for painting the grid, from the start month to December.
+/// Geometry for painting the grid: the whole year, January to December.
 class _Layout {
-  _Layout({
-    required this.year,
-    required this.startMonth,
-    required double available,
-  })  : firstDay = Heatmap.firstDay(year, startMonth),
+  _Layout({required this.year, required double available})
+      : firstDay = Heatmap.firstDay(year),
         lastDay = Heatmap.lastDay(year),
-        firstWeek = EpochDay.weekStart(Heatmap.firstDay(year, startMonth)),
-        cols = Heatmap.columns(year, startMonth),
+        firstWeek = EpochDay.weekStart(Heatmap.firstDay(year)),
+        cols = Heatmap.columns(year),
         pitch = Heatmap.cellPitch(
           available: available,
-          columns: Heatmap.columns(year, startMonth),
+          columns: Heatmap.columns(year),
         );
 
   /// Width of the fixed weekday-label column on the left.
@@ -102,7 +99,6 @@ class _Layout {
   static const double topPad = 18;
 
   final int year;
-  final int startMonth;
   final int firstDay;
   final int lastDay;
   final int firstWeek;
@@ -118,10 +114,9 @@ class _Layout {
 
 /// The heatmap itself, painted on single canvases and display only.
 ///
-/// It runs from the first month with data (or the current month for a new
-/// user) to December, so it is never mostly empty. Cells are a comfortable size;
-/// when the range is too wide to fit at that size it scrolls sideways, opening
-/// on the current week.
+/// It always shows the whole year, so days logged in the past are never cut
+/// off. Cells are a comfortable size, so a full year is wider than a phone: it
+/// scrolls sideways, opening on the current week.
 class HeatmapGrid extends StatelessWidget {
   const HeatmapGrid({super.key, required this.data, required this.todayDay});
 
@@ -132,17 +127,8 @@ class HeatmapGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final startMonth = Heatmap.startMonth(
-          year: data.year,
-          firstDataDay: data.firstDataDay,
-          today: todayDay,
-        );
         final available = constraints.maxWidth - _Layout.labelWidth;
-        final layout = _Layout(
-          year: data.year,
-          startMonth: startMonth,
-          available: available,
-        );
+        final layout = _Layout(year: data.year, available: available);
 
         final grid = RepaintBoundary(
           child: CustomPaint(
@@ -157,7 +143,7 @@ class HeatmapGrid extends StatelessWidget {
         } else {
           final isCurrentYear = data.year == EpochDay.toDate(todayDay).year;
           body = _HorizontalScroll(
-            key: ValueKey('${data.year}-$startMonth'),
+            key: ValueKey(data.year),
             initialOffset: Heatmap.initialScrollOffset(
               currentColumn:
                   isCurrentYear ? (todayDay - layout.firstWeek) ~/ 7 : null,
@@ -272,9 +258,9 @@ class _GridPainter extends CustomPainter {
       }
     }
 
-    // A month name above the first column of each month shown.
-    for (var month = l.startMonth; month <= 12; month++) {
-      final first = Heatmap.firstDay(l.year, month);
+    // A month name above the first column of each month.
+    for (var month = 1; month <= 12; month++) {
+      final first = EpochDay.fromDate(DateTime(l.year, month, 1));
       final col = (first - l.firstWeek) ~/ 7;
       _textPainter(Fmt.month(month).substring(0, 3))
           .paint(canvas, Offset(col * l.pitch, 0));
@@ -285,8 +271,7 @@ class _GridPainter extends CustomPainter {
   bool shouldRepaint(_GridPainter old) =>
       old.data != data ||
       old.todayDay != todayDay ||
-      old.layout.pitch != layout.pitch ||
-      old.layout.startMonth != layout.startMonth;
+      old.layout.pitch != layout.pitch;
 }
 
 /// M, W, F and S beside rows 0, 2, 4 and 6.

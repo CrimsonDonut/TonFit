@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../core/theme/app_colors.dart';
 
 /// The frame around the two main tabs: a top bar with the app name on the left
-/// and Settings on the right, and a bottom bar to switch between Home and
+/// and Programs and Settings on the right, and a bottom bar to switch between Home and
 /// History. Full-screen flows (choose program, add exercise, settings) are
 /// pushed above this and cover it.
 class AppShell extends StatelessWidget {
@@ -33,6 +33,10 @@ class AppShell extends StatelessWidget {
                 height: 26,
                 filterQuality: FilterQuality.medium,
                 excludeFromSemantics: true,
+                // If the asset ever fails to load, show just the name rather
+                // than an error box that overflows the bar.
+                errorBuilder: (context, error, stackTrace) =>
+                    const SizedBox.shrink(),
               ),
               const SizedBox(width: 10),
               Text(
@@ -42,6 +46,11 @@ class AppShell extends StatelessWidget {
             ],
           ),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.book_outlined),
+              tooltip: 'Programs',
+              onPressed: () => context.push('/my-programs'),
+            ),
             IconButton(
               icon: const Icon(Icons.settings_outlined),
               tooltip: 'Settings',

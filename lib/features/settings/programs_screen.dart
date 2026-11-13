@@ -41,7 +41,7 @@ class ProgramsScreen extends ConsumerWidget {
           Widget row(ProgramView p) => Column(
                 children: [
                   InkWell(
-                    onTap: () => context.push('/settings/programs/${p.program.id}'),
+                    onTap: () => context.push('/my-programs/${p.program.id}'),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       child: Row(
@@ -77,7 +77,7 @@ class ProgramsScreen extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.margin),
             children: [
-              Text('TONFIT · SETTINGS', style: text.labelSmall),
+              Text('TONFIT · MANAGE', style: text.labelSmall),
               const SizedBox(height: 8),
               Text('Programs', style: text.headlineLarge),
               const SizedBox(height: 16),

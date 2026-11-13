@@ -2,11 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tonfit/domain/epoch_day.dart';
 import 'package:tonfit/domain/heatmap.dart';
 
-int day(int y, int m, int d) => EpochDay.fromDate(DateTime(y, m, d));
-
-// "Today" for these tests: Mon 9 Nov 2026.
-final today = day(2026, 11, 9);
-
 void main() {
   test('tiers by set count', () {
     expect(Heatmap.tier(0), equals(0));
@@ -20,79 +15,16 @@ void main() {
     expect(Heatmap.tier(60), equals(4));
   });
 
-  group('startMonth', () {
-    test('a brand-new user starts at the current month', () {
-      expect(
-        Heatmap.startMonth(year: 2026, firstDataDay: null, today: today),
-        equals(11),
-      );
+  group('the whole year is always shown', () {
+    test('from 1 January to 31 December', () {
+      expect(Heatmap.firstDay(2026), equals(EpochDay.fromDate(DateTime(2026, 1, 1))));
+      expect(Heatmap.lastDay(2026), equals(EpochDay.fromDate(DateTime(2026, 12, 31))));
     });
 
-    test('the first logged month is where it starts', () {
-      expect(
-        Heatmap.startMonth(
-            year: 2026, firstDataDay: day(2026, 11, 9), today: today),
-        equals(11),
-      );
-      expect(
-        Heatmap.startMonth(
-            year: 2026, firstDataDay: day(2026, 3, 14), today: today),
-        equals(3),
-      );
-    });
-
-    test('starting in January shows the whole year', () {
-      expect(
-        Heatmap.startMonth(
-            year: 2026, firstDataDay: day(2026, 1, 2), today: today),
-        equals(1),
-      );
-    });
-
-    test('later years start in January', () {
-      expect(
-        Heatmap.startMonth(
-            year: 2026, firstDataDay: day(2025, 11, 20), today: today),
-        equals(1),
-      );
-    });
-
-    test('the first year, when it is a past year, starts at its first month', () {
-      expect(
-        Heatmap.startMonth(
-            year: 2025, firstDataDay: day(2025, 11, 20), today: today),
-        equals(11),
-      );
-    });
-
-    test('data dated after today never pushes the start past the current month', () {
-      expect(
-        Heatmap.startMonth(
-            year: 2026, firstDataDay: day(2026, 12, 20), today: today),
-        equals(11),
-      );
-    });
-
-    test('no data and a year that is not the current one starts in January', () {
-      expect(
-        Heatmap.startMonth(year: 2025, firstDataDay: null, today: today),
-        equals(1),
-      );
-    });
-  });
-
-  group('columns', () {
-    test('a full year is 53 week columns in 2026', () {
-      expect(Heatmap.columns(2026, 1), equals(53));
-    });
-
-    test('November onward is 10 columns, December alone is 5', () {
-      expect(Heatmap.columns(2026, 11), equals(10));
-      expect(Heatmap.columns(2026, 12), equals(5));
-    });
-
-    test('March onward is 45', () {
-      expect(Heatmap.columns(2026, 3), equals(45));
+    test('a year is 53 week columns', () {
+      for (final year in [2024, 2025, 2026, 2027]) {
+        expect(Heatmap.columns(year), equals(53), reason: '$year');
+      }
     });
   });
 
@@ -146,6 +78,20 @@ void main() {
             currentColumn: 3, pitch: 10, viewportWidth: 344, contentWidth: 530),
         equals(0),
       );
+    });
+
+    test('in November 2026 the view opens on the current week, not January', () {
+      final today = EpochDay.fromDate(DateTime(2026, 11, 9));
+      final firstWeek = EpochDay.weekStart(Heatmap.firstDay(2026));
+      final column = (today - firstWeek) ~/ 7;
+      final offset = Heatmap.initialScrollOffset(
+        currentColumn: column,
+        pitch: 10,
+        viewportWidth: 344,
+        contentWidth: 530,
+      );
+      expect(column, equals(45));
+      expect(offset, equals(186)); // scrolled to the right end, where November is
     });
   });
 }

@@ -76,12 +76,6 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(),
           _NavRow(
-            title: 'Programs',
-            subtitle: 'Create, rename and archive programs and exercises',
-            onTap: () => context.push('/settings/programs'),
-          ),
-          const Divider(),
-          _NavRow(
             title: 'Export / Import',
             subtitle: 'Back up, restore and repair your data',
             onTap: () => context.push('/settings/backup'),

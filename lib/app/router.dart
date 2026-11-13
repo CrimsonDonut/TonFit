@@ -58,11 +58,11 @@ final appRouter = GoRouter(
       builder: (context, state) => const BackupScreen(),
     ),
     GoRoute(
-      path: '/settings/programs',
+      path: '/my-programs',
       builder: (context, state) => const ProgramsScreen(),
     ),
     GoRoute(
-      path: '/settings/programs/:id',
+      path: '/my-programs/:id',
       builder: (context, state) => ProgramDetailScreen(
         programId: int.parse(state.pathParameters['id']!),
       ),
