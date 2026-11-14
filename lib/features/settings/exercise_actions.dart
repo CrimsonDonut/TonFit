@@ -5,6 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../data/database/app_database.dart';
 import '../../data/database/tables.dart';
 import '../../data/repositories/catalog_repository.dart';
+import '../../data/repositories/session_repository.dart';
 import 'dialogs.dart';
 
 /// The actions for one exercise of a program: rename, archive or restore, and
@@ -38,6 +39,15 @@ Future<void> showExerciseActions(
               title: const Text('Rename'),
               onTap: () => Navigator.of(ctx).pop('rename'),
             ),
+          if (e.type.isTimeBased && !e.archived)
+            ListTile(
+              leading: const Icon(Icons.straighten),
+              title: Text(
+                e.tracksDistance ? 'Stop tracking distance' : 'Track distance',
+              ),
+              subtitle: const Text('For running, cycling and similar'),
+              onTap: () => Navigator.of(ctx).pop('distance'),
+            ),
           ListTile(
             leading: Icon(
               e.archived ? Icons.unarchive_outlined : Icons.archive_outlined,
@@ -67,6 +77,27 @@ Future<void> showExerciseActions(
   switch (action) {
     case 'archive':
       await catalog.setExerciseArchived(e.id, !e.archived);
+
+    case 'distance':
+      final enable = !e.tracksDistance;
+      final ok = await confirmDialog(
+        context,
+        title: enable
+            ? 'Track distance for “${e.name}”?'
+            : 'Stop tracking distance?',
+        message: enable
+            ? 'New sets will ask for a distance, and progress will be measured '
+                'in distance instead of time. Sets you logged before have no '
+                'distance, so they count as 0 until you edit them.'
+            : 'Progress goes back to being measured in time. Distances you '
+                'already logged are kept.',
+        confirm: enable ? 'Track' : 'Stop',
+      );
+      if (!ok) return;
+      if (await catalog.setTracksDistance(e.id, enable)) {
+        // Volume changes meaning, so recalculate this exercise's history.
+        await ref.read(sessionRepositoryProvider).recalculateExercise(e.id);
+      }
 
     case 'rename':
       final name = await promptText(

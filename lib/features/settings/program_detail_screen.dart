@@ -41,6 +41,7 @@ class ProgramDetailScreen extends ConsumerWidget {
           programId: programId,
           name: result.name,
           type: result.type,
+          tracksDistance: result.trackDistance,
         );
   }
 

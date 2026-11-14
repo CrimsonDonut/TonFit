@@ -16,11 +16,13 @@ class ExerciseSession {
     List<SetData> sets, {
     ExerciseType type = ExerciseType.weighted,
     int bodyweightRef = Progress.defaultBodyweightRef,
+    bool trackDistance = false,
   }) {
     final m = Progress.metrics(
       sets,
       type: type,
       bodyweightRef: bodyweightRef,
+      trackDistance: trackDistance,
     );
     return ExerciseSession(
       day: day,
@@ -55,12 +57,16 @@ class SuggestionContext {
     this.priorBests,
     this.extras = const {},
     this.timeBased = false,
+    this.distanceBased = false,
   });
 
   final String exerciseName;
 
   /// A timed exercise: tips talk about time instead of reps and weight.
   final bool timeBased;
+
+  /// Progress is measured in distance (a run): tips talk about distance.
+  final bool distanceBased;
   final List<ExerciseSession> history;
   final PriorBests? priorBests;
   final Map<String, Object?> extras;
@@ -164,7 +170,12 @@ Map<String, Object?>? _stall(SuggestionContext ctx, SuggestionConfig cfg) {
   for (var i = 1; identical && i < cfg.identicalSessions; i++) {
     identical = _sameSets(h[0], h[i]);
   }
-  return {'sessions': n, 'identical': identical, 'timeBased': ctx.timeBased};
+  return {
+    'sessions': n,
+    'identical': identical,
+    'timeBased': ctx.timeBased,
+    'distanceBased': ctx.distanceBased,
+  };
 }
 
 /// The starter rules (requirements section 3.4). New rules, including ones
@@ -236,6 +247,9 @@ String suggestionMessage(SuggestionHit hit) {
           '$name hasn’t progressed in ${hit.params['sessions']} sessions. '
           'Are you eating enough and sleeping well?';
       if (hit.params['identical'] != true) return base;
+      if (hit.params['distanceBased'] == true) {
+        return '$base Try going a little further.';
+      }
       return hit.params['timeBased'] == true
           ? '$base Try adding 5–10 seconds.'
           : '$base Try adding 1–2 reps or a small weight increase.';

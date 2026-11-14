@@ -50,6 +50,20 @@ void main() {
       expect(label(2700, ExerciseType.sport), equals('45m'));
     });
 
+    test('distance follows the time, in the unit that goes with the weight unit', () {
+      String label(int s, ExerciseType t, int? d, WeightUnit u) => Fmt.setLabel(
+            weight: null,
+            reps: s,
+            type: t,
+            unit: u,
+            distance: d,
+          );
+      expect(label(1710, ExerciseType.timed, 5200, WeightUnit.kg), equals('28:30 · 5.2 km'));
+      expect(label(1710, ExerciseType.timed, 5200, WeightUnit.lb), equals('28:30 · 3.23 mi'));
+      expect(label(5400, ExerciseType.sport, 7500, WeightUnit.kg), equals('1h 30m · 7.5 km'));
+      expect(label(1710, ExerciseType.timed, null, WeightUnit.kg), equals('28:30'));
+    });
+
     test('clock time', () {
       expect(Fmt.clockTime(0), equals('0:00'));
       expect(Fmt.clockTime(59), equals('0:59'));

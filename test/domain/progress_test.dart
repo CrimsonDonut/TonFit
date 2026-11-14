@@ -53,6 +53,45 @@ void main() {
       expect(m.repsAtTop, equals(5400));
     });
 
+    test('with distance tracked, volume is total metres and the best set the farthest', () {
+      final m = Progress.metrics(
+        const [
+          SetData(null, 1710, distance: 5000),
+          SetData(null, 600, distance: 2000),
+        ],
+        type: ExerciseType.timed,
+        trackDistance: true,
+      );
+      expect(m.volume, equals(7000));
+      expect(m.setCount, equals(2));
+      expect(m.repsAtTop, equals(5000));
+    });
+
+    test('without tracking distance, time is still what counts', () {
+      final m = Progress.metrics(
+        const [SetData(null, 1710, distance: 5000)],
+        type: ExerciseType.timed,
+      );
+      expect(m.volume, equals(1710));
+    });
+
+    test('a longer run shows as a gain, a faster one over the same distance does not', () {
+      int vol(int metres, int seconds) => Progress.metrics(
+            [SetData(null, seconds, distance: metres)],
+            type: ExerciseType.timed,
+            trackDistance: true,
+          ).volume;
+      expect(Progress.pctTenths(vol(5500, 1800), vol(5000, 1800)), equals(100));
+      expect(Progress.pctTenths(vol(5000, 1500), vol(5000, 1800)), equals(0));
+    });
+
+    test('sets with different distances are not equal', () {
+      expect(const SetData(null, 60, distance: 1000) == const SetData(null, 60, distance: 2000),
+          isFalse);
+      expect(const SetData(null, 60, distance: 1000) == const SetData(null, 60, distance: 1000),
+          isTrue);
+    });
+
     test('a longer plank shows as a gain', () {
       final before = Progress.metrics(const [SetData(null, 60)], type: ExerciseType.timed);
       final after = Progress.metrics(const [SetData(null, 66)], type: ExerciseType.timed);

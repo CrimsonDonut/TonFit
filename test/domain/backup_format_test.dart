@@ -234,14 +234,91 @@ void main() {
           reps: 90,
           timeBased: true,
         ),
-        equals('2026-10-24,Cardio,Plank,2,,,90\n'),
+        equals('2026-10-24,Cardio,Plank,2,,,90,\n'),
+      );
+    });
+  });
+
+  group('distance in a backup', () {
+    BackupData withRun() => const BackupData(
+          version: 1,
+          exportedAt: 'x',
+          settings: {},
+          programs: [BackupProgram(id: 1, name: 'Cardio', sortOrder: 0, archived: false)],
+          exercises: [
+            BackupExercise(
+                id: 1,
+                programId: 1,
+                name: 'Running',
+                type: 'timed',
+                archived: false,
+                tracksDistance: true),
+            BackupExercise(
+                id: 2, programId: 1, name: 'Plank', type: 'timed', archived: false),
+          ],
+          restDays: [],
+          sessions: [
+            BackupSession(day: 20750, programId: 1, timeIn: null, timeOut: null, logs: [
+              BackupLog(exerciseId: 1, sets: [
+                BackupSet(weight: null, reps: 1710, distance: 5250),
+              ]),
+              BackupLog(exerciseId: 2, sets: [BackupSet(weight: null, reps: 60)]),
+            ]),
+          ],
+        );
+
+    test('the flag and the distances round-trip', () {
+      final parsed = BackupFormat.parse(BackupFormat.encode(withRun()));
+      expect(parsed.exercises[0].tracksDistance, isTrue);
+      expect(parsed.exercises[1].tracksDistance, isFalse);
+      expect(parsed.sessions.single.logs[0].sets.single.distance, equals(5250));
+      expect(parsed.sessions.single.logs[1].sets.single.distance, isNull);
+    });
+
+    test('a set without distance stays in the compact two-value form', () {
+      expect(const BackupSet(weight: 6000, reps: 10).toJson(), equals([6000, 10]));
+      expect(const BackupSet(weight: null, reps: 60, distance: 1000).toJson(),
+          equals([null, 60, 1000]));
+    });
+
+    test('a negative or non-numeric distance is refused', () {
+      for (final bad in [-5, '5 km', 1.5]) {
+        final doc = jsonDecode(BackupFormat.encode(withRun())) as Map<String, Object?>;
+        final logs = ((doc['sessions'] as List).first as Map)['logs'] as List;
+        ((logs.first as Map)['sets'] as List)[0] = [null, 1710, bad];
+        expect(failure(jsonEncode(doc))?.message, contains('invalid distance'));
+      }
+    });
+
+    test('old backups without the field still load', () {
+      final doc = jsonDecode(BackupFormat.encode(sample())) as Map<String, Object?>;
+      expect(BackupFormat.parse(jsonEncode(doc)).exercises.first.tracksDistance, isFalse);
+    });
+
+    test('CSV rows carry kilometres', () {
+      expect(BackupFormat.kmText(5250), equals('5.25'));
+      expect(BackupFormat.kmText(5000), equals('5'));
+      expect(BackupFormat.kmText(500), equals('0.5'));
+      expect(BackupFormat.kmText(null), equals(''));
+      expect(
+        BackupFormat.csvRow(
+          day: 20750,
+          program: 'Cardio',
+          exercise: 'Running',
+          setNumber: 1,
+          weight: null,
+          reps: 1710,
+          timeBased: true,
+          distance: 5250,
+        ),
+        equals('2026-10-24,Cardio,Running,1,,,1710,5.25\n'),
       );
     });
   });
 
   group('CSV', () {
     test('header and escaping', () {
-      expect(BackupFormat.csvHeader, equals('date,program,exercise,set,weight_kg,reps,seconds\n'));
+      expect(BackupFormat.csvHeader, equals('date,program,exercise,set,weight_kg,reps,seconds,distance_km\n'));
       expect(BackupFormat.csvField('Bench Press'), equals('Bench Press'));
       expect(BackupFormat.csvField('Pull, heavy'), equals('"Pull, heavy"'));
       expect(BackupFormat.csvField('The "big" one'), equals('"The ""big"" one"'));
@@ -267,7 +344,7 @@ void main() {
           weight: 5750,
           reps: 8,
         ),
-        equals('2026-10-24,Push,Bench Press,2,57.5,8,\n'),
+        equals('2026-10-24,Push,Bench Press,2,57.5,8,,\n'),
       );
       expect(
         BackupFormat.csvRow(
@@ -278,7 +355,7 @@ void main() {
           weight: null,
           reps: 12,
         ),
-        equals('2026-10-19,"Pull, heavy",Pull-Up,1,,12,\n'),
+        equals('2026-10-19,"Pull, heavy",Pull-Up,1,,12,,\n'),
       );
     });
   });

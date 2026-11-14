@@ -578,4 +578,91 @@ void main() {
       expect((await sessionRow(s2)).summaryPct, equals(-50));
     });
   });
+
+  group('runs tracked by distance', () {
+    late int push;
+    late CatalogRepository catalog;
+
+    setUp(() async {
+      push = await programId('Push');
+      catalog = CatalogRepository(db);
+    });
+
+    Future<int> run(DateTime when, int exerciseId, int seconds, int? metres) async {
+      now = when;
+      final sid = await repo.startSession(programId: push);
+      final logId = await repo.addExercise(sessionId: sid, exerciseId: exerciseId);
+      await repo.addSet(
+        exerciseLogId: logId,
+        weight: null,
+        reps: seconds,
+        distance: metres,
+      );
+      return sid;
+    }
+
+    Future<ExerciseLog> logIn(int sid, int exerciseId) =>
+        (db.select(db.exerciseLogs)
+              ..where((t) => t.sessionId.equals(sid) & t.exerciseId.equals(exerciseId)))
+            .getSingle();
+
+    test('a farther run is progress, and the farthest is a personal best', () async {
+      final running = await catalog.createExercise(
+          programId: push, name: 'Running', type: ExerciseType.timed, tracksDistance: true);
+      await run(at(10, 19), running, 1800, 5000);
+      final s2 = await run(at(10, 26), running, 1740, 5500);
+
+      final log = await logIn(s2, running);
+      expect(log.volume, equals(5500)); // metres, not seconds
+      expect(log.repsAtTop, equals(5500)); // the farthest single set
+      expect(log.pct, equals(100)); // +10.0% distance
+      expect((await sessionRow(s2)).summaryPct, equals(100));
+      expect((await suggestionsFor(s2)).single.ruleId, equals('pr'));
+    });
+
+    test('the same distance in less time is not counted as a gain', () async {
+      final running = await catalog.createExercise(
+          programId: push, name: 'Running', type: ExerciseType.timed, tracksDistance: true);
+      await run(at(10, 19), running, 1800, 5000);
+      final s2 = await run(at(10, 26), running, 1500, 5000);
+      expect((await logIn(s2, running)).pct, equals(0));
+    });
+
+    test('the previous best set for prefilling is the farthest run', () async {
+      final running = await catalog.createExercise(
+          programId: push, name: 'Running', type: ExerciseType.timed, tracksDistance: true);
+      final s1 = await run(at(10, 19), running, 600, 2000);
+      final log1 = await logIn(s1, running);
+      await repo.addSet(exerciseLogId: log1.id, weight: null, reps: 1800, distance: 5000);
+      final s2 = await run(at(10, 26), running, 1700, 5200);
+
+      final best = await WorkoutQueries(db).previousBestSet(await logIn(s2, running));
+      expect(best?.distance, equals(5000));
+      expect(best?.reps, equals(1800));
+    });
+
+    test('switching distance tracking on re-measures the exercise history', () async {
+      final cycling = await catalog.createExercise(
+          programId: push, name: 'Cycling', type: ExerciseType.timed);
+      await run(at(10, 19), cycling, 3600, 20000);
+      final s2 = await run(at(10, 26), cycling, 3000, 22000);
+
+      // Tracked as time: 50 minutes after 60 minutes is a drop of 16.7%.
+      expect((await logIn(s2, cycling)).pct, equals(-167));
+
+      await catalog.setTracksDistance(cycling, true);
+      await repo.recalculateExercise(cycling);
+
+      // Now measured in distance: 22 km after 20 km is a gain of 10.0%.
+      final log = await logIn(s2, cycling);
+      expect(log.volume, equals(22000));
+      expect(log.pct, equals(100));
+      expect((await sessionRow(s2)).summaryPct, equals(100));
+
+      // And back again.
+      await catalog.setTracksDistance(cycling, false);
+      await repo.recalculateExercise(cycling);
+      expect((await logIn(s2, cycling)).pct, equals(-167));
+    });
+  });
 }

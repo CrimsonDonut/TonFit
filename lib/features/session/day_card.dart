@@ -11,6 +11,7 @@ import '../../data/database/tables.dart';
 import '../../data/queries/workout_queries.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../domain/epoch_day.dart';
+import '../../domain/distance.dart';
 import '../../domain/progress.dart';
 import '../../domain/weight.dart';
 import '../settings/dialogs.dart';
@@ -303,11 +304,12 @@ class _ExerciseSection extends ConsumerWidget {
   final ExerciseLogView view;
   final WeightUnit unit;
 
-  String _label(int? weight, int reps) => Fmt.setLabel(
+  String _label(int? weight, int reps, int? distance) => Fmt.setLabel(
         weight: weight,
         reps: reps,
         type: view.exercise.type,
         unit: unit,
+        distance: view.exercise.tracksDistance ? distance : null,
       );
 
   Future<void> _remove(BuildContext context, WidgetRef ref) async {
@@ -331,6 +333,7 @@ class _ExerciseSection extends ConsumerWidget {
     final isSport = type == ExerciseType.sport;
     // Sport has no percentage; its header shows the total time played.
     final totalSeconds = view.sets.fold<int>(0, (a, s) => a + s.reps);
+    final totalMeters = view.sets.fold<int>(0, (a, s) => a + (s.distance ?? 0));
 
     return Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 4),
@@ -343,7 +346,13 @@ class _ExerciseSection extends ConsumerWidget {
               if (view.sets.isNotEmpty && type.tracksProgress)
                 PctBadge(view.log.pct)
               else if (view.sets.isNotEmpty && isSport)
-                Text(Fmt.duration(totalSeconds), style: text.bodySmall),
+                Text(
+                  view.exercise.tracksDistance && totalMeters > 0
+                      ? '${Fmt.duration(totalSeconds)} · '
+                          '${Distance.format(totalMeters, Distance.unitFor(unit))}'
+                      : Fmt.duration(totalSeconds),
+                  style: text.bodySmall,
+                ),
               PopupMenuButton<String>(
                 tooltip: 'Exercise options',
                 icon: const Icon(Icons.more_vert,
@@ -368,7 +377,7 @@ class _ExerciseSection extends ConsumerWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
                 child: Text(
-                  '${s.idx}. ${_label(s.weight, s.reps)}',
+                  '${s.idx}. ${_label(s.weight, s.reps, s.distance)}',
                   style: text.bodyLarge,
                 ),
               ),

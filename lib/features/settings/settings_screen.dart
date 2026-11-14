@@ -38,7 +38,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           _SettingRow(
             title: 'Weight unit',
-            subtitle: 'Used for entry and display',
+            subtitle: 'Kilograms and kilometres, or pounds and miles',
             trailing: SegmentedButton<WeightUnit>(
               showSelectedIcon: false,
               segments: const [

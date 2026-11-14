@@ -154,4 +154,27 @@ void main() {
       expect(await catalog.deleteExercise(bench.id), isTrue);
     });
   });
+
+  group('distance tracking', () {
+    test('only timed and sport exercises can track distance', () async {
+      final push = await programId('Push');
+      final run = await catalog.createExercise(
+          programId: push, name: 'Running', type: ExerciseType.timed, tracksDistance: true);
+      final curl = await catalog.createExercise(
+          programId: push, name: 'Cable Curl', type: ExerciseType.weighted, tracksDistance: true);
+
+      Future<bool> tracks(int id) async => (await (db.select(db.exercises)
+                ..where((t) => t.id.equals(id)))
+              .getSingle())
+          .tracksDistance;
+      expect(await tracks(run), isTrue);
+      expect(await tracks(curl), isFalse); // the flag is ignored for strength
+
+      expect(await catalog.setTracksDistance(curl, true), isFalse);
+      expect(await tracks(curl), isFalse);
+
+      expect(await catalog.setTracksDistance(run, false), isTrue);
+      expect(await tracks(run), isFalse);
+    });
+  });
 }

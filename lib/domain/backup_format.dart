@@ -34,10 +34,14 @@ class BackupExercise {
     required this.name,
     required this.type,
     required this.archived,
+    this.tracksDistance = false,
   });
   final int id;
   final int programId;
   final String name;
+
+  /// A timed or sport exercise whose sets also record distance.
+  final bool tracksDistance;
 
   /// 'weighted', 'bodyweight', 'timed' or 'sport'.
   final String type;
@@ -49,11 +53,12 @@ class BackupExercise {
         'name': name,
         'type': type,
         'archived': archived,
+        if (tracksDistance) 'tracksDistance': true,
       };
 }
 
 class BackupSet {
-  const BackupSet({required this.weight, required this.reps});
+  const BackupSet({required this.weight, required this.reps, this.distance});
 
   /// Hundredths of a kilogram; null for a pure bodyweight set and for timed
   /// and sport exercises.
@@ -62,8 +67,12 @@ class BackupSet {
   /// Repetitions, or for timed and sport exercises the duration in seconds.
   final int reps;
 
-  /// Compact form: [weight, reps].
-  List<Object?> toJson() => [weight, reps];
+  /// Metres, for time-based exercises that track distance.
+  final int? distance;
+
+  /// Compact form: [weight, reps], or [weight, reps, distance].
+  List<Object?> toJson() =>
+      distance == null ? [weight, reps] : [weight, reps, distance];
 }
 
 class BackupLog {
@@ -218,6 +227,7 @@ abstract final class BackupFormat {
           name: _string(_map(e, 'exercise')['name'], 'exercise name'),
           type: _type(_map(e, 'exercise')['type']),
           archived: _bool(_map(e, 'exercise')['archived']),
+          tracksDistance: _bool(_map(e, 'exercise')['tracksDistance']),
         ),
     ];
     final exerciseIds = {for (final e in exercises) e.id};
@@ -259,18 +269,26 @@ abstract final class BackupFormat {
         }
         final sets = <BackupSet>[];
         for (final rawSet in _list(l, 'sets')) {
-          if (rawSet is! List || rawSet.length != 2) {
+          if (rawSet is! List || (rawSet.length != 2 && rawSet.length != 3)) {
             throw const FormatException('A set is not in the expected form.');
           }
           final weight = rawSet[0];
           final reps = _int(rawSet[1], 'reps');
+          final distance = rawSet.length == 3 ? rawSet[2] : null;
+          if (distance != null && (distance is! int || distance < 0)) {
+            throw const FormatException('A set has an invalid distance.');
+          }
           if (weight != null && (weight is! int || weight < 0)) {
             throw const FormatException('A set has an invalid weight.');
           }
           if (reps < 1) {
             throw const FormatException('A set has an invalid number of reps.');
           }
-          sets.add(BackupSet(weight: weight as int?, reps: reps));
+          sets.add(BackupSet(
+            weight: weight as int?,
+            reps: reps,
+            distance: distance as int?,
+          ));
         }
         logs.add(BackupLog(exerciseId: exerciseId, sets: sets));
       }
@@ -302,7 +320,7 @@ abstract final class BackupFormat {
   // --- CSV -------------------------------------------------------------------
 
   static const String csvHeader =
-      'date,program,exercise,set,weight_kg,reps,seconds\n';
+      'date,program,exercise,set,weight_kg,reps,seconds,distance_km\n';
 
   /// Escapes one CSV field (quotes when it contains a comma, quote or newline).
   static String csvField(String value) {
@@ -327,8 +345,16 @@ abstract final class BackupFormat {
     return s;
   }
 
+  /// Metres as kilometres to three places, trailing zeros trimmed: 5250 -> "5.25".
+  static String kmText(int? meters) {
+    if (meters == null) return '';
+    var s = (meters / 1000).toStringAsFixed(3);
+    s = s.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+    return s;
+  }
+
   /// One set. Strength rows fill weight and reps; timed and sport rows fill
-  /// only the seconds column.
+  /// the seconds column and, when distance is tracked, the distance column.
   static String csvRow({
     required int day,
     required String program,
@@ -337,12 +363,13 @@ abstract final class BackupFormat {
     required int? weight,
     required int reps,
     bool timeBased = false,
+    int? distance,
   }) {
     final head = '${_dateLabel(day)},${csvField(program)},${csvField(exercise)},'
         '$setNumber,';
     return timeBased
-        ? '$head,,$reps\n'
-        : '$head${kgText(weight)},$reps,\n';
+        ? '$head,,$reps,${kmText(distance)}\n'
+        : '$head${kgText(weight)},$reps,,\n';
   }
 
   // --- helpers ---------------------------------------------------------------

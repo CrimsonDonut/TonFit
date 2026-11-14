@@ -103,6 +103,7 @@ class SessionRepository {
     required int exerciseLogId,
     int? weight,
     required int reps,
+    int? distance,
     DateTime? at,
   }) {
     return db.transaction(() async {
@@ -120,6 +121,7 @@ class SessionRepository {
               idx: next,
               reps: reps,
               weight: Value(weight),
+              distance: Value(distance),
             ),
           );
 
@@ -143,13 +145,18 @@ class SessionRepository {
     required int setId,
     int? weight,
     required int reps,
+    int? distance,
   }) {
     return db.transaction(() async {
       final row = await (db.select(db.setEntries)
             ..where((t) => t.id.equals(setId)))
           .getSingle();
       await (db.update(db.setEntries)..where((t) => t.id.equals(setId)))
-          .write(SetEntriesCompanion(weight: Value(weight), reps: Value(reps)));
+          .write(SetEntriesCompanion(
+        weight: Value(weight),
+        reps: Value(reps),
+        distance: Value(distance),
+      ));
       await _afterLogChange(row.exerciseLogId);
     });
   }
@@ -206,6 +213,42 @@ class SessionRepository {
             .write(ExerciseLogsCompanion(sortOrder: Value(i)));
       }
       await _refreshSuggestions(sessionId);
+    });
+  }
+
+  /// Recomputes everything that depends on one exercise's sets, across its whole
+  /// history, without touching the rest of the data. Needed after distance
+  /// tracking is switched on or off for the exercise, because that changes what
+  /// its volume means. Bounded by that one exercise's logs.
+  Future<void> recalculateExercise(int exerciseId) {
+    return db.transaction(() async {
+      final logs = await (db.select(db.exerciseLogs)
+            ..where((t) => t.exerciseId.equals(exerciseId))
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.day),
+              (t) => OrderingTerm.asc(t.id),
+            ]))
+          .get();
+      for (final log in logs) {
+        await _updateLogMetrics(log.id);
+      }
+      for (final log in logs) {
+        await _relinkLog(log.id);
+      }
+      // Sessions containing it, oldest first, so each compares with an
+      // already-corrected earlier one.
+      final sessionIds = <int>[];
+      for (final log in logs) {
+        if (!sessionIds.contains(log.sessionId)) sessionIds.add(log.sessionId);
+      }
+      for (final id in sessionIds) {
+        await _refreshSession(id);
+      }
+      await _refreshStats(exerciseId);
+      for (final id in sessionIds) {
+        await _refreshSuggestions(id);
+      }
+      await _refreshStreak();
     });
   }
 
@@ -364,6 +407,7 @@ class SessionRepository {
     final m = Progress.metrics(
       sets,
       type: exercise.type,
+      trackDistance: exercise.tracksDistance,
     );
     await (db.update(db.exerciseLogs)..where((t) => t.id.equals(logId))).write(
       ExerciseLogsCompanion(
@@ -661,6 +705,7 @@ class SessionRepository {
       contexts.add(SuggestionContext(
         exerciseName: exercise.name,
         timeBased: exercise.type.isTimeBased,
+        distanceBased: exercise.type.isTimeBased && exercise.tracksDistance,
         history: history,
         priorBests: await _bests(log.exerciseId, beforeDay: session.day),
       ));
@@ -713,7 +758,7 @@ class SessionRepository {
           ..where((t) => t.exerciseLogId.equals(logId))
           ..orderBy([(t) => OrderingTerm.asc(t.idx)]))
         .get();
-    return [for (final r in rows) SetData(r.weight, r.reps)];
+    return [for (final r in rows) SetData(r.weight, r.reps, distance: r.distance)];
   }
 
   int _seconds(DateTime t) => t.millisecondsSinceEpoch ~/ 1000;

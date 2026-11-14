@@ -35,10 +35,12 @@ class CatalogRepository {
     });
   }
 
+  /// [tracksDistance] only applies to timed and sport exercises.
   Future<int> createExercise({
     required int programId,
     required String name,
     required ExerciseType type,
+    bool tracksDistance = false,
   }) {
     return db.transaction(() async {
       final clean = name.trim();
@@ -56,8 +58,24 @@ class CatalogRepository {
               name: clean,
               nameKey: key,
               type: type,
+              tracksDistance: Value(tracksDistance && type.isTimeBased),
             ),
           );
+    });
+  }
+
+  /// Switches distance tracking on or off for a timed or sport exercise.
+  /// Returns false when the exercise is not time-based. The caller must then
+  /// call SessionRepository.recalculateExercise, since volume changes meaning.
+  Future<bool> setTracksDistance(int id, bool value) {
+    return db.transaction(() async {
+      final exercise = await (db.select(db.exercises)
+            ..where((t) => t.id.equals(id)))
+          .getSingle();
+      if (!exercise.type.isTimeBased) return false;
+      await (db.update(db.exercises)..where((t) => t.id.equals(id)))
+          .write(ExercisesCompanion(tracksDistance: Value(value)));
+      return true;
     });
   }
 

@@ -193,16 +193,39 @@ class WorkoutQueries {
         [db.sessions, db.exerciseLogs, db.setEntries, db.suggestions],
       );
 
-  /// Top set of the previous occurrence of [log]'s exercise, for the
-  /// "Last session: 60 kg × 10" line.
-  Future<({int? weight, int? reps})?> previousTop(ExerciseLog log) async {
+  /// The best set of the previous occurrence of [log]'s exercise, for the
+  /// "Last session" line and for prefilling the next set. Best means: heaviest
+  /// (then most reps) for strength, farthest for a run that tracks distance, and
+  /// longest otherwise.
+  Future<SetEntry?> previousBestSet(ExerciseLog log) async {
     final prevId = log.prevLogId;
     if (prevId == null) return null;
-    final prev = await (db.select(db.exerciseLogs)
-          ..where((t) => t.id.equals(prevId)))
-        .getSingleOrNull();
-    if (prev == null) return null;
-    return (weight: prev.bestWeight, reps: prev.repsAtTop);
+    final sets = await (db.select(db.setEntries)
+          ..where((t) => t.exerciseLogId.equals(prevId)))
+        .get();
+    if (sets.isEmpty) return null;
+    final exercise = await (db.select(db.exercises)
+          ..where((t) => t.id.equals(log.exerciseId)))
+        .getSingle();
+
+    bool better(SetEntry a, SetEntry b) {
+      if (exercise.type.isTimeBased) {
+        if (exercise.tracksDistance) {
+          final byDistance = (a.distance ?? 0).compareTo(b.distance ?? 0);
+          if (byDistance != 0) return byDistance > 0;
+        }
+        return a.reps > b.reps;
+      }
+      final byWeight = (a.weight ?? 0).compareTo(b.weight ?? 0);
+      if (byWeight != 0) return byWeight > 0;
+      return a.reps > b.reps;
+    }
+
+    var best = sets.first;
+    for (final s in sets.skip(1)) {
+      if (better(s, best)) best = s;
+    }
+    return best;
   }
 
   // --- heatmap ---

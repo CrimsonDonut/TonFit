@@ -93,6 +93,7 @@ class BackupRepository {
                 setNumber: i + 1,
                 weight: log.sets[i].weight,
                 reps: log.sets[i].reps,
+                distance: log.sets[i].distance,
                 timeBased: _isTimeBased(exercises[log.exerciseId]?.type),
               ));
             }
@@ -133,6 +134,7 @@ class BackupRepository {
           name: e.name,
           type: e.type.name,
           archived: e.archived,
+          tracksDistance: e.tracksDistance,
         ),
     ];
   }
@@ -178,7 +180,7 @@ class BackupRepository {
       final setsByLog = <int, List<BackupSet>>{};
       for (final s in sets) {
         (setsByLog[s.exerciseLogId] ??= [])
-            .add(BackupSet(weight: s.weight, reps: s.reps));
+            .add(BackupSet(weight: s.weight, reps: s.reps, distance: s.distance));
       }
       final logsBySession = <int, List<BackupLog>>{};
       for (final l in logs) {
@@ -248,6 +250,7 @@ class BackupRepository {
               nameKey: Value(e.name.toLowerCase()),
               type: Value(ExerciseType.values.byName(e.type)),
               archived: Value(e.archived),
+              tracksDistance: Value(e.tracksDistance),
             ));
       }
 
@@ -275,6 +278,7 @@ class BackupRepository {
                   idx: Value(n + 1),
                   weight: Value(log.sets[n].weight),
                   reps: Value(log.sets[n].reps),
+                  distance: Value(log.sets[n].distance),
                 ),
             ]);
           });

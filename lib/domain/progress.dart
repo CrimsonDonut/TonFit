@@ -3,19 +3,25 @@ import 'exercise_type.dart';
 /// One logged set. [weight] is stored hundredths of a kg; null for pure
 /// bodyweight sets (for "BW + 10 kg" it holds the added weight).
 class SetData {
-  const SetData(this.weight, this.reps);
+  const SetData(this.weight, this.reps, {this.distance});
   final int? weight;
   final int reps;
 
+  /// Metres, for timed and sport exercises that track distance.
+  final int? distance;
+
   @override
   bool operator ==(Object other) =>
-      other is SetData && other.weight == weight && other.reps == reps;
+      other is SetData &&
+      other.weight == weight &&
+      other.reps == reps &&
+      other.distance == distance;
 
   @override
-  int get hashCode => Object.hash(weight, reps);
+  int get hashCode => Object.hash(weight, reps, distance);
 
   @override
-  String toString() => 'SetData($weight x $reps)';
+  String toString() => 'SetData($weight x $reps, distance $distance)';
 }
 
 /// Per-exercise numbers derived from its sets (the cached columns on
@@ -48,18 +54,22 @@ abstract final class Progress {
   /// Weighted: volume is weight x reps. Bodyweight: each rep counts as the
   /// reference body weight plus any added weight. Timed and sport: each set's
   /// `reps` holds its duration in seconds, volume is the total time, and the
-  /// "best set" is the longest single set.
+  /// "best set" is the longest single set. When [trackDistance] is on, the
+  /// total distance in metres is the volume instead (a longer run is progress)
+  /// and the best set is the farthest single set.
   static ExerciseMetrics metrics(
     List<SetData> sets, {
     ExerciseType type = ExerciseType.weighted,
     int bodyweightRef = defaultBodyweightRef,
+    bool trackDistance = false,
   }) {
     if (type.isTimeBased) {
       var total = 0;
       var longest = 0;
       for (final s in sets) {
-        total += s.reps;
-        if (s.reps > longest) longest = s.reps;
+        final amount = trackDistance ? (s.distance ?? 0) : s.reps;
+        total += amount;
+        if (amount > longest) longest = amount;
       }
       return ExerciseMetrics(
         volume: total,

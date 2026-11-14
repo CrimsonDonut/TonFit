@@ -1,3 +1,4 @@
+import '../domain/distance.dart';
 import '../domain/exercise_type.dart';
 import '../domain/weight.dart';
 
@@ -47,18 +48,24 @@ abstract final class Fmt {
 
   /// One set as text. Weighted: "60 kg × 10". Bodyweight: "BW × 12" or
   /// "BW + 10 kg × 8". Timed: "1:30". Sport: "1h 30m". For timed and sport,
-  /// [reps] holds the duration in seconds.
+  /// [reps] holds the duration in seconds, and [distance] (metres) is optional.
   static String setLabel({
     required int? weight,
     required int reps,
     required ExerciseType type,
     required WeightUnit unit,
+    int? distance,
   }) {
+    // Distance (metres) is shown after the time, in the unit that goes with
+    // the weight unit: "28:30 · 5.2 km".
+    final far = distance == null
+        ? ''
+        : ' · ${Distance.format(distance, Distance.unitFor(unit))}';
     switch (type) {
       case ExerciseType.sport:
-        return duration(reps);
+        return '${duration(reps)}$far';
       case ExerciseType.timed:
-        return clockTime(reps);
+        return '${clockTime(reps)}$far';
       case ExerciseType.bodyweight:
         if (weight == null || weight == 0) return 'BW × $reps';
         return 'BW + ${weightText(weight, unit)} × $reps';

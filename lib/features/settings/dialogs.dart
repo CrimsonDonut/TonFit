@@ -11,6 +11,7 @@ Future<String?> promptText(
   String hint = '',
   int maxLength = 40,
   String confirm = 'Save',
+  TextInputType? keyboardType,
 }) {
   final controller = TextEditingController(text: initial);
   return showDialog<String>(
@@ -21,6 +22,7 @@ Future<String?> promptText(
         controller: controller,
         autofocus: true,
         maxLength: maxLength,
+        keyboardType: keyboardType,
         textCapitalization: TextCapitalization.words,
         decoration: InputDecoration(hintText: hint),
       ),
@@ -45,10 +47,18 @@ class ExerciseTypePicker extends StatelessWidget {
     super.key,
     required this.value,
     required this.onChanged,
+    this.trackDistance = false,
+    this.onTrackDistanceChanged,
   });
 
   final ExerciseType value;
   final ValueChanged<ExerciseType> onChanged;
+
+  /// Optional distance for timed and sport exercises (running, cycling). The
+  /// checkbox only appears when [onTrackDistanceChanged] is given and the kind
+  /// is time-based.
+  final bool trackDistance;
+  final ValueChanged<bool>? onTrackDistanceChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -91,18 +101,28 @@ class ExerciseTypePicker extends StatelessWidget {
               ),
             ),
           ),
+        if (value.isTimeBased && onTrackDistanceChanged != null)
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            value: trackDistance,
+            onChanged: (v) => onTrackDistanceChanged!(v ?? false),
+            title: const Text('Track distance'),
+            subtitle: const Text('For running, jogging, cycling or swimming.'),
+          ),
       ],
     );
   }
 }
 
-/// Name plus the kind of exercise, for a new exercise.
-Future<({String name, ExerciseType type})?> promptNewExercise(
-  BuildContext context,
-) {
+/// Name, kind and (for timed and sport) whether to track distance, for a new
+/// exercise.
+Future<({String name, ExerciseType type, bool trackDistance})?>
+    promptNewExercise(BuildContext context) {
   final controller = TextEditingController();
   var type = ExerciseType.weighted;
-  return showDialog<({String name, ExerciseType type})>(
+  var trackDistance = false;
+  return showDialog<({String name, ExerciseType type, bool trackDistance})>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setState) => AlertDialog(
@@ -122,6 +142,8 @@ Future<({String name, ExerciseType type})?> promptNewExercise(
               ExerciseTypePicker(
                 value: type,
                 onChanged: (t) => setState(() => type = t),
+                trackDistance: trackDistance,
+                onTrackDistanceChanged: (v) => setState(() => trackDistance = v),
               ),
             ],
           ),
@@ -132,8 +154,11 @@ Future<({String name, ExerciseType type})?> promptNewExercise(
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop((name: controller.text, type: type)),
+            onPressed: () => Navigator.of(ctx).pop((
+              name: controller.text,
+              type: type,
+              trackDistance: trackDistance && type.isTimeBased,
+            )),
             child: const Text('Create'),
           ),
         ],

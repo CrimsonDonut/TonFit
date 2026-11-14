@@ -104,7 +104,7 @@ Future<Map<String, Object?>> portable(Env env) async {
         exercises[l.exerciseId],
         l.pct,
         l.volume,
-        [for (final x in sets) [x.idx, x.weight, x.reps]],
+        [for (final x in sets) [x.idx, x.weight, x.reps, x.distance]],
       ]);
     }
     out.add([
@@ -235,10 +235,10 @@ void main() {
     expect(lines.first, equals('date,program,exercise,set,weight_kg,reps,seconds'));
     // 2 + 2 sets on the 19th, 1 on the 21st, 2 + 1 on the 26th.
     expect(lines.length, equals(1 + 8));
-    expect(lines, contains('2026-10-19,Push,Bench Press,1,60,10,'));
-    expect(lines, contains('2026-10-19,Push,Dips,1,,12,')); // pure bodyweight
-    expect(lines, contains('2026-10-19,Push,Dips,2,10,8,')); // BW + 10 kg
-    expect(lines, contains('2026-10-26,Push,Bench Press,1,62.5,8,'));
+    expect(lines, contains('2026-10-19,Push,Bench Press,1,60,10,,'));
+    expect(lines, contains('2026-10-19,Push,Dips,1,,12,,')); // pure bodyweight
+    expect(lines, contains('2026-10-19,Push,Dips,2,10,8,,')); // BW + 10 kg
+    expect(lines, contains('2026-10-26,Push,Bench Press,1,62.5,8,,'));
   });
 
   test('a long history is exported across several batches in order', () async {
@@ -308,7 +308,50 @@ void main() {
     final csv = File('${tmp.path}/types.csv');
     await a.backup.exportCsv(csv);
     final lines = csv.readAsLinesSync();
-    expect(lines, contains('2026-10-19,Push,Plank,1,,,60'));
-    expect(lines, contains('2026-10-19,Push,Basketball,1,,,5400'));
+    expect(lines, contains('2026-10-19,Push,Plank,1,,,60,'));
+    expect(lines, contains('2026-10-19,Push,Basketball,1,,,5400,'));
+  });
+
+  test('distance and the track-distance flag survive a backup, and the CSV uses km', () async {
+    final a = Env();
+    final b = Env();
+    addTearDown(a.db.close);
+    addTearDown(b.db.close);
+
+    final push = (await (a.db.select(a.db.programs)
+              ..where((t) => t.name.equals('Push')))
+            .getSingle())
+        .id;
+    final running = await CatalogRepository(a.db).createExercise(
+      programId: push,
+      name: 'Running',
+      type: ExerciseType.timed,
+      tracksDistance: true,
+    );
+    final sid = await a.sessions
+        .startSession(programId: push, day: EpochDay.fromDate(DateTime(2026, 10, 19)));
+    final logId = await a.sessions.addExercise(sessionId: sid, exerciseId: running);
+    await a.sessions.addSet(
+      exerciseLogId: logId,
+      weight: null,
+      reps: 1710,
+      distance: 5250,
+      at: DateTime(2026, 10, 19, 18),
+    );
+
+    final json = File('${tmp.path}/run.json.gz');
+    await a.backup.exportJson(json, now: clock);
+    await b.backup.restore(b.backup.read(json.readAsBytesSync()));
+
+    final restored = (await b.db.select(b.db.exercises).get())
+        .firstWhere((e) => e.name == 'Running');
+    expect(restored.tracksDistance, isTrue);
+    final set = await b.db.select(b.db.setEntries).getSingle();
+    expect(set.distance, equals(5250));
+    expect(await portable(b), equals(await portable(a)));
+
+    final csv = File('${tmp.path}/run.csv');
+    await a.backup.exportCsv(csv);
+    expect(csv.readAsLinesSync(), contains('2026-10-19,Push,Running,1,,,1710,5.25'));
   });
 }

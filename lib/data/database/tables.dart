@@ -38,6 +38,10 @@ class Exercises extends Table {
   IntColumn get type => intEnum<ExerciseType>()();
   BoolColumn get archived => boolean().withDefault(const Constant(false))();
 
+  /// Timed and sport exercises can also record a distance for each set (running,
+  /// jogging, cycling). Progress is then measured in distance.
+  BoolColumn get tracksDistance => boolean().withDefault(const Constant(false))();
+
   // An exercise belongs to one program, so its history and comparisons are
   // per program automatically. Names are unique within a program.
   @override
@@ -116,6 +120,9 @@ class SetEntries extends Table {
   IntColumn get weight => integer().nullable()();
   /// Repetitions, or for timed and sport exercises the duration in seconds.
   IntColumn get reps => integer()();
+
+  /// Whole metres, for timed and sport exercises that track distance.
+  IntColumn get distance => integer().nullable()();
 
   @override
   List<Set<Column>> get uniqueKeys => [

@@ -89,6 +89,43 @@ void main() {
     });
   });
 
+  group('runs tracked by distance', () {
+    ExerciseSession run(int day) => ExerciseSession.fromSets(
+          day,
+          const [SetData(null, 1800, distance: 5000)],
+          type: ExerciseType.timed,
+          trackDistance: true,
+        );
+
+    test('a stall suggests going further', () {
+      final hit = engine.evaluate(SuggestionContext(
+        exerciseName: 'Running',
+        timeBased: true,
+        distanceBased: true,
+        history: [run(4), run(3), run(2), run(1)],
+      ));
+      expect(hit?.ruleId, equals('stall'));
+      expect(suggestionMessage(hit!), contains('Try going a little further'));
+    });
+
+    test('the farthest run so far is a personal best', () {
+      final farther = ExerciseSession.fromSets(
+        2,
+        const [SetData(null, 2400, distance: 6500)],
+        type: ExerciseType.timed,
+        trackDistance: true,
+      );
+      final hit = engine.evaluate(SuggestionContext(
+        exerciseName: 'Running',
+        timeBased: true,
+        distanceBased: true,
+        history: [farther],
+        priorBests: const PriorBests(maxWeight: 0, repsAtMaxWeight: 5000),
+      ));
+      expect(hit?.ruleId, equals('pr'));
+    });
+  });
+
   group('decline and large drop', () {
     test('two consecutive declines', () {
       final hit = engine.evaluate(ctx([s(3, flat(38)), s(2, flat(39)), s(1, flat(40))]));
