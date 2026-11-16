@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -81,6 +82,14 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => context.push('/settings/backup'),
           ),
           const Divider(),
+          if (!kReleaseMode) ...[
+            _NavRow(
+              title: 'Developer tools',
+              subtitle: 'Test data and performance checks (not in release builds)',
+              onTap: () => context.push('/settings/dev'),
+            ),
+            const Divider(),
+          ],
           if (privacyPolicyUrl.isNotEmpty) ...[
             _NavRow(
               title: 'Privacy policy',

@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:go_router/go_router.dart';
 
+import '../dev/dev_tools_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/session/add_exercise_screen.dart';
@@ -53,6 +55,13 @@ final appRouter = GoRouter(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
     ),
+    // Test data and performance checks. kReleaseMode is a compile-time
+    // constant, so this route and its code are left out of release builds.
+    if (!kReleaseMode)
+      GoRoute(
+        path: '/settings/dev',
+        builder: (context, state) => const DevToolsScreen(),
+      ),
     GoRoute(
       path: '/settings/backup',
       builder: (context, state) => const BackupScreen(),

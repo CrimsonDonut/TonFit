@@ -134,6 +134,7 @@ It runs the tests, builds a release APK and the app bundle, and reports:
 - **Size.** The target is under 15 MB. If it is over, run `flutter build apk --release --analyze-size --target-platform android-arm64` and send me the output.
 - **Permissions.** It should say there is no INTERNET permission. If a package adds one, tell me which.
 - **16 KB alignment.** Google Play requires apps to work on devices with 16 KB memory pages, which affects native libraries such as SQLite. If the check or the Play Console reports a problem, send me the message.
+- **Performance.** Do the ten-year check in `docs/PERFORMANCE.md` once before the first release: it measures start-up, saving, History and database size against the targets.
 
 Then install the release build on a real phone, not only the emulator:
 

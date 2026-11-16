@@ -216,6 +216,12 @@ class SessionRepository {
     });
   }
 
+  /// Recomputes one session's suggestion messages. Normal edits already do this
+  /// as part of their own transaction; this is here so the performance
+  /// benchmark (lib/dev) can time the suggestion engine on its own.
+  Future<void> rebuildSuggestionsFor(int sessionId) =>
+      db.transaction(() => _refreshSuggestions(sessionId));
+
   /// Recomputes everything that depends on one exercise's sets, across its whole
   /// history, without touching the rest of the data. Needed after distance
   /// tracking is switched on or off for the exercise, because that changes what
