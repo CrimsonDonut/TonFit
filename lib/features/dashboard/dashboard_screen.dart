@@ -19,6 +19,8 @@ class DashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
     final today = ref.watch(todayProvider);
+    // Re-check the streak when the dashboard opens and when the date changes.
+    ref.watch(streakRefreshProvider);
     final date = EpochDay.toDate(today);
     final detail = ref.watch(dayDetailProvider(today)).valueOrNull;
 

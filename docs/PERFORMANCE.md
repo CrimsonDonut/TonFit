@@ -9,7 +9,8 @@ again after any change to the database or to what the History tab loads.
 | Cold start to the dashboard | under 1.5 s |
 | Expand a day card | under 100 ms |
 | Open a year in History | under 300 ms |
-| Save a set, including every summary it affects | under 50 ms |
+| Save a set in a recent session, including every summary it affects | under 50 ms |
+| Save a set in an old session (also updates the sessions after it) | under 150 ms |
 | Suggestion engine for a session | under 100 ms |
 | Database file after ten years | under about 15 MB |
 

@@ -136,7 +136,7 @@ class SessionRepository {
         ));
       }
 
-      await _afterLogChange(exerciseLogId);
+      await _afterLogChange(exerciseLogId, log: log, session: session);
       return id;
     });
   }
@@ -193,14 +193,14 @@ class SessionRepository {
             ..where((t) => t.id.equals(exerciseLogId)))
           .go();
       await _relinkFollowingLogs(log.exerciseId, log.day);
-      await _afterExerciseDayChange(session, log.exerciseId);
+      await _afterExerciseDayChange(session, await _exercise(log.exerciseId));
     });
   }
 
   /// Saves a new order for a session's exercises: [orderedLogIds] lists the
   /// exercise-log ids from first to last. Ids that don't belong to the session
-  /// are ignored. Order is display-only, so nothing else needs recalculating
-  /// except the suggestion list, which follows exercise order for ties.
+  /// are ignored. Order is display-only: nothing else needs recalculating,
+  /// because the suggestion list is put in exercise order when it is read.
   Future<void> reorderExercises({
     required int sessionId,
     required List<int> orderedLogIds,
@@ -212,7 +212,6 @@ class SessionRepository {
                   t.id.equals(orderedLogIds[i]) & t.sessionId.equals(sessionId)))
             .write(ExerciseLogsCompanion(sortOrder: Value(i)));
       }
-      await _refreshSuggestions(sessionId);
     });
   }
 
@@ -283,7 +282,7 @@ class SessionRepository {
       await _refreshWeek(session.day);
       for (final exerciseId in exerciseIds) {
         await _refreshStats(exerciseId);
-        await _refreshSuggestionsAfter(session.day, exerciseId);
+        await _refreshSuggestionsAfter(session.day, await _exercise(exerciseId));
       }
       await _refreshStreak();
     });
@@ -380,20 +379,67 @@ class SessionRepository {
   // Cache pipeline
   // ---------------------------------------------------------------------------
 
-  Future<void> _afterLogChange(int logId) async {
-    final log = await _log(logId);
-    final session = await _session(log.sessionId);
-    await _refreshLog(logId);
-    await _relinkFollowingLogs(log.exerciseId, log.day);
-    await _afterExerciseDayChange(session, log.exerciseId);
+  Future<void> _afterLogChange(
+    int logId, {
+    ExerciseLog? log,
+    Session? session,
+  }) async {
+    // Callers that already read these rows pass them in, to save round trips.
+    final l = log ?? await _log(logId);
+    final s = session ?? await _session(l.sessionId);
+    final exercise = await _exercise(l.exerciseId);
+    await _refreshLogAndLink(l, exercise);
+    await _relinkFollowingLogs(l.exerciseId, l.day);
+    await _afterExerciseDayChange(s, exercise, ownLog: l);
   }
 
-  Future<void> _afterExerciseDayChange(Session session, int exerciseId) async {
-    await _refreshSession(session.id);
+  Future<void> _afterExerciseDayChange(
+    Session session,
+    Exercise exercise, {
+    ExerciseLog? ownLog,
+  }) async {
+    final weekChanged = await _refreshSession(session.id);
     await _refreshFollowingSessions(session.programId, session.day);
-    await _refreshStats(exerciseId);
-    await _refreshSuggestionsFrom(session.id, session.day, exerciseId);
-    await _refreshStreak();
+    await _refreshStats(exercise.id);
+    await _refreshSuggestionsFrom(session.day, exercise, ownLog: ownLog);
+    // The streak depends only on the weekly counts, so it needs recalculating
+    // only when one changed (a session's first set, or its last one removed).
+    // The dashboard also refreshes it as days pass: see streakRefreshProvider.
+    if (weekChanged) await _refreshStreak();
+  }
+
+  /// Recomputes one log from its sets and links it to the previous occurrence
+  /// in a single write. Does the work of [_updateLogMetrics] and [_relinkLog]
+  /// with fewer round trips to the database, for the edit path.
+  Future<void> _refreshLogAndLink(ExerciseLog log, Exercise exercise) async {
+    final sets = await _sets(log.id);
+    final m = Progress.metrics(
+      sets,
+      type: exercise.type,
+      trackDistance: exercise.tracksDistance,
+    );
+    final prev = await (db.select(db.exerciseLogs)
+          ..where((t) =>
+              t.exerciseId.equals(log.exerciseId) &
+              t.day.isSmallerThanValue(log.day) &
+              t.setCount.isBiggerThanValue(0))
+          ..orderBy([(t) => OrderingTerm.desc(t.day)])
+          ..limit(1))
+        .getSingleOrNull();
+    // Sport has nothing to compare, and an empty log has no result yet.
+    final pct = (m.setCount == 0 || !exercise.type.tracksProgress)
+        ? null
+        : Progress.pctTenths(m.volume, prev?.volume);
+    await (db.update(db.exerciseLogs)..where((t) => t.id.equals(log.id))).write(
+      ExerciseLogsCompanion(
+        volume: Value(m.volume),
+        setCount: Value(m.setCount),
+        bestWeight: Value(m.setCount == 0 ? null : m.topWeight),
+        repsAtTop: Value(m.repsAtTop),
+        prevLogId: Value(prev?.id),
+        pct: Value(pct),
+      ),
+    );
   }
 
   /// Recomputes one exercise log's cached numbers from its sets, then relinks
@@ -469,7 +515,7 @@ class SessionRepository {
 
   /// Session totals, link to the previous same-program session, summary %,
   /// the day summary row (heatmap) and the week count.
-  Future<void> _refreshSession(int sessionId) async {
+  Future<bool> _refreshSession(int sessionId) async {
     final s = await _session(sessionId);
     final logs = await (db.select(db.exerciseLogs)
           ..where((t) => t.sessionId.equals(sessionId)))
@@ -535,7 +581,7 @@ class SessionRepository {
             isRest: const Value(false),
           ),
         );
-    await _refreshWeek(s.day);
+    return _refreshWeek(s.day);
   }
 
   /// Refreshes the next session of the program, continuing past empty ones
@@ -557,7 +603,8 @@ class SessionRepository {
   }
 
   /// Number of sessions (with at least one set) in the week containing [day].
-  Future<void> _refreshWeek(int day) async {
+  /// Returns whether the stored count changed.
+  Future<bool> _refreshWeek(int day) async {
     final start = EpochDay.weekStart(day);
     final count = db.sessions.id.count();
     final row = await (db.selectOnly(db.sessions)
@@ -566,6 +613,11 @@ class SessionRepository {
               db.sessions.setCount.isBiggerThanValue(0)))
         .getSingle();
     final n = row.read(count) ?? 0;
+    final existing = await (db.select(db.weekSummaries)
+          ..where((t) => t.weekStart.equals(start)))
+        .getSingleOrNull();
+    if (n == (existing?.sessionCount ?? 0)) return false;
+
     if (n == 0) {
       await (db.delete(db.weekSummaries)
             ..where((t) => t.weekStart.equals(start)))
@@ -578,6 +630,7 @@ class SessionRepository {
             ),
           );
     }
+    return true;
   }
 
   /// Personal bests across logs of [exerciseId], optionally only before a day.
@@ -637,98 +690,120 @@ class SessionRepository {
         );
   }
 
-  /// The next few sessions that contain the exercise after [day]: their
-  /// suggestion history windows are the ones an edit can change.
-  Future<Set<int>> _followingSessionIds(int exerciseId, int day) async {
-    final following = await (db.select(db.exerciseLogs)
-          ..where((t) =>
-              t.exerciseId.equals(exerciseId) &
-              t.day.isBiggerThanValue(day) &
-              t.setCount.isBiggerThanValue(0))
-          ..orderBy([(t) => OrderingTerm.asc(t.day)])
-          ..limit(_rippleSessions))
-        .get();
-    return {for (final l in following) l.sessionId};
-  }
+  /// The next few logs of the exercise after [day]: the ones whose suggestion
+  /// history windows an edit can change.
+  Future<List<ExerciseLog>> _followingLogs(int exerciseId, int day) =>
+      (db.select(db.exerciseLogs)
+            ..where((t) =>
+                t.exerciseId.equals(exerciseId) &
+                t.day.isBiggerThanValue(day) &
+                t.setCount.isBiggerThanValue(0))
+            ..orderBy([(t) => OrderingTerm.asc(t.day)])
+            ..limit(_rippleSessions))
+          .get();
 
-  /// Refreshes suggestions for the session itself and for the next few
-  /// sessions that contain the exercise, since their history windows changed.
+  /// After an edit: the suggestion for the edited exercise, and for its next
+  /// few occurrences. Only this one exercise can have changed, so the others in
+  /// the session are left alone (this is what keeps saving a set fast).
   Future<void> _refreshSuggestionsFrom(
-    int sessionId,
     int day,
-    int exerciseId,
-  ) async {
-    final ids = {sessionId, ...await _followingSessionIds(exerciseId, day)};
-    for (final id in ids) {
-      await _refreshSuggestions(id);
+    Exercise exercise, {
+    ExerciseLog? ownLog,
+  }) async {
+    if (ownLog != null) await _suggestionForLog(ownLog, exercise);
+    await _refreshSuggestionsAfter(day, exercise);
+  }
+
+  /// Same, for the occurrences after [day] only (the session at [day] may no
+  /// longer exist: it was deleted).
+  Future<void> _refreshSuggestionsAfter(int day, Exercise exercise) async {
+    for (final log in await _followingLogs(exercise.id, day)) {
+      await _suggestionForLog(log, exercise);
     }
   }
 
-  /// Same, for when the session at [day] no longer exists (it was deleted).
-  Future<void> _refreshSuggestionsAfter(int day, int exerciseId) async {
-    for (final id in await _followingSessionIds(exerciseId, day)) {
-      await _refreshSuggestions(id);
-    }
-  }
-
+  /// Every exercise of one session. Used by repair, import and the benchmark.
   Future<void> _refreshSuggestions(int sessionId) async {
-    final session = await _session(sessionId);
     await (db.delete(db.suggestions)
           ..where((t) => t.sessionId.equals(sessionId)))
         .go();
-
     final logs = await (db.select(db.exerciseLogs)
           ..where((t) =>
-              t.sessionId.equals(sessionId) & t.setCount.isBiggerThanValue(0))
-          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+              t.sessionId.equals(sessionId) & t.setCount.isBiggerThanValue(0)))
         .get();
-
-    final contexts = <SuggestionContext>[];
-    final logIdByName = <String, int>{};
+    if (logs.isEmpty) return;
+    final exercises = {
+      for (final e in await (db.select(db.exercises)
+            ..where((t) => t.id.isIn({for (final l in logs) l.exerciseId})))
+          .get())
+        e.id: e,
+    };
     for (final log in logs) {
-      final exercise = await (db.select(db.exercises)
-            ..where((t) => t.id.equals(log.exerciseId)))
-          .getSingle();
-      if (!exercise.type.tracksProgress) continue; // sport: nothing to suggest
-      final recent = await (db.select(db.exerciseLogs)
-            ..where((t) =>
-                t.exerciseId.equals(log.exerciseId) &
-                t.day.isSmallerOrEqualValue(session.day) &
-                t.setCount.isBiggerThanValue(0))
-            ..orderBy([(t) => OrderingTerm.desc(t.day)])
-            ..limit(_historyLimit))
-          .get();
-      final history = <ExerciseSession>[];
-      for (final r in recent) {
-        history.add(ExerciseSession(
-          day: r.day,
-          volume: r.volume,
-          topWeight: r.bestWeight ?? 0,
-          repsAtTop: r.repsAtTop,
-          sets: await _sets(r.id),
-        ));
-      }
-      contexts.add(SuggestionContext(
-        exerciseName: exercise.name,
-        timeBased: exercise.type.isTimeBased,
-        distanceBased: exercise.type.isTimeBased && exercise.tracksDistance,
-        history: history,
-        priorBests: await _bests(log.exerciseId, beforeDay: session.day),
-      ));
-      logIdByName[exercise.name] = log.id;
+      await _suggestionForLog(log, exercises[log.exerciseId]!);
+    }
+  }
+
+  /// Replaces the stored suggestion of ONE exercise log with the best rule that
+  /// fires for it now (or none). A day shows at most three messages, chosen when
+  /// it is read, so each exercise simply keeps its own.
+  Future<void> _suggestionForLog(ExerciseLog log, Exercise exercise) async {
+    await (db.delete(db.suggestions)
+          ..where((t) => t.exerciseLogId.equals(log.id)))
+        .go();
+    if (!exercise.type.tracksProgress) return; // sport: nothing to suggest
+
+    final recent = await (db.select(db.exerciseLogs)
+          ..where((t) =>
+              t.exerciseId.equals(log.exerciseId) &
+              t.day.isSmallerOrEqualValue(log.day) &
+              t.setCount.isBiggerThanValue(0))
+          ..orderBy([(t) => OrderingTerm.desc(t.day)])
+          ..limit(_historyLimit))
+        .get();
+    // Nothing to say while this log has no sets yet.
+    if (recent.isEmpty || recent.first.id != log.id) return;
+
+    // All the sets of the recent logs in one query, grouped here.
+    final setRows = await (db.select(db.setEntries)
+          ..where((t) => t.exerciseLogId.isIn([for (final r in recent) r.id]))
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.exerciseLogId),
+            (t) => OrderingTerm.asc(t.idx),
+          ]))
+        .get();
+    final setsByLog = <int, List<SetData>>{};
+    for (final r in setRows) {
+      (setsByLog[r.exerciseLogId] ??= [])
+          .add(SetData(r.weight, r.reps, distance: r.distance));
     }
 
-    for (final hit in _engine.evaluateSession(contexts)) {
-      await db.into(db.suggestions).insert(
-            SuggestionsCompanion.insert(
-              sessionId: sessionId,
-              ruleId: hit.ruleId,
-              priority: hit.priority,
-              exerciseLogId: Value(logIdByName[hit.exerciseName]),
-              params: Value(jsonEncode(hit.params)),
-            ),
-          );
-    }
+    final hit = _engine.evaluate(SuggestionContext(
+      exerciseName: exercise.name,
+      timeBased: exercise.type.isTimeBased,
+      distanceBased: exercise.type.isTimeBased && exercise.tracksDistance,
+      history: [
+        for (final r in recent)
+          ExerciseSession(
+            day: r.day,
+            volume: r.volume,
+            topWeight: r.bestWeight ?? 0,
+            repsAtTop: r.repsAtTop,
+            sets: setsByLog[r.id] ?? const [],
+          ),
+      ],
+      priorBests: await _bests(log.exerciseId, beforeDay: log.day),
+    ));
+    if (hit == null) return;
+
+    await db.into(db.suggestions).insert(
+          SuggestionsCompanion.insert(
+            sessionId: log.sessionId,
+            ruleId: hit.ruleId,
+            priority: hit.priority,
+            exerciseLogId: Value(log.id),
+            params: Value(jsonEncode(hit.params)),
+          ),
+        );
   }
 
   /// Streak from the weekly summary table (one row per week with sessions).
@@ -756,6 +831,9 @@ class SessionRepository {
   Future<Session> _session(int id) =>
       (db.select(db.sessions)..where((t) => t.id.equals(id))).getSingle();
 
+  Future<Exercise> _exercise(int id) =>
+      (db.select(db.exercises)..where((t) => t.id.equals(id))).getSingle();
+
   Future<ExerciseLog> _log(int id) =>
       (db.select(db.exerciseLogs)..where((t) => t.id.equals(id))).getSingle();
 
@@ -776,3 +854,11 @@ final sessionRepositoryProvider = Provider<SessionRepository>(
     weeklyGoal: () => ref.read(weeklyGoalProvider),
   ),
 );
+
+/// Keeps the stored streak correct as time passes. A new day or week can end a
+/// streak without any workout data changing, so the dashboard watches this: it
+/// runs when the dashboard first appears and again whenever the date rolls over.
+final streakRefreshProvider = FutureProvider<void>((ref) {
+  ref.watch(todayProvider);
+  return ref.read(sessionRepositoryProvider).refreshStreak();
+});

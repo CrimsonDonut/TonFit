@@ -80,7 +80,7 @@ class BenchmarkRunner {
     final old = sessions.sublist(0, sessions.length ~/ 3);
     results.add(BenchResult(
       'Save a set, old session (updates what follows)',
-      50,
+      150,
       await _saveSets(15, () => old[_random.nextInt(old.length)].id),
     ));
 

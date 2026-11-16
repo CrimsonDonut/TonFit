@@ -112,7 +112,7 @@ Future<Map<String, Object?>> snapshot() async => {
               ..orderBy([
                 (t) => OrderingTerm.asc(t.sessionId),
                 (t) => OrderingTerm.asc(t.priority),
-                (t) => OrderingTerm.asc(t.id),
+                (t) => OrderingTerm.asc(t.exerciseLogId),
               ]))
             .get())
           [r.sessionId, r.exerciseLogId, r.ruleId, r.priority, r.params],
@@ -664,5 +664,92 @@ void main() {
       await repo.recalculateExercise(cycling);
       expect((await logIn(s2, cycling)).pct, equals(-167));
     });
+  });
+
+  group('suggestions are kept per exercise', () {
+    test('a day shows at most three messages, in exercise order', () async {
+      final names = [
+        'Bench Press',
+        'Overhead Press',
+        'Incline Dumbbell Press',
+        'Triceps Pushdown',
+      ];
+      await workout('Push', at(10, 19), {for (final n in names) n: [(60, 8)]});
+      final b = await workout('Push', at(10, 26), {for (final n in names) n: [(62, 8)]});
+
+      // All four exercises set a personal best, and each keeps its own message...
+      expect((await suggestionsFor(b)).length, equals(4));
+      // ...but the day shows three, best priority first, ties in exercise order.
+      final detail = await WorkoutQueries(db)
+          .loadDay(EpochDay.fromDate(DateTime(2026, 10, 26)));
+      expect(detail!.messages, equals([
+        'New PR on Bench Press.',
+        'New PR on Overhead Press.',
+        'New PR on Incline Dumbbell Press.',
+      ]));
+    });
+
+    test('saving a set recomputes only the exercise it belongs to', () async {
+      int? last;
+      for (final d in [5, 12, 19, 26]) {
+        last = await workout('Push', at(10, d), {
+          'Overhead Press': [(40, 8), (40, 8), (40, 8)],
+          'Bench Press': [(60, 10), (60, 10), (60, 10)],
+        });
+      }
+      final ohp = await logOf(last!, 'Push', 'Overhead Press');
+      final bench = await logOf(last, 'Push', 'Bench Press');
+      Future<Suggestion?> hit(int logId) => (db.select(db.suggestions)
+            ..where((t) => t.exerciseLogId.equals(logId)))
+          .getSingleOrNull();
+
+      final ohpBefore = await hit(ohp.id);
+      expect(ohpBefore?.ruleId, equals('stall'));
+      expect((await hit(bench.id))?.ruleId, equals('stall'));
+
+      // A heavier set breaks bench press's flat run.
+      await repo.addSet(exerciseLogId: bench.id, weight: 6200, reps: 10);
+
+      expect((await hit(ohp.id))?.id, equals(ohpBefore!.id)); // left untouched
+      expect((await hit(bench.id))?.ruleId, equals('pr')); // recomputed
+    });
+
+    test('an edit reaches the following sessions of that exercise', () async {
+      // Four flat sessions: only the last has enough history to call it a stall.
+      final ids = <int>[];
+      for (final d in [5, 12, 19, 26]) {
+        ids.add(await workout('Push', at(10, d), {
+          'Overhead Press': [(40, 8), (40, 8), (40, 8)],
+        }));
+      }
+      expect((await suggestionsFor(ids.last)).single.ruleId, equals('stall'));
+
+      // Make the first session lighter. The second one now counts as an
+      // improvement, so the last session no longer has a run of four flat ones.
+      final first = await logOf(ids.first, 'Push', 'Overhead Press');
+      final sets = await (db.select(db.setEntries)
+            ..where((t) => t.exerciseLogId.equals(first.id)))
+          .get();
+      await repo.updateSet(setId: sets.first.id, weight: 2000, reps: 8);
+
+      expect(await suggestionsFor(ids.last), isEmpty);
+    });
+  });
+
+  test('the streak is brought up to date as weeks pass, with no workout logged', () async {
+    goal = 1;
+    for (final d in [5, 12, 19]) {
+      await workout('Push', at(10, d), {'Bench Press': [(60, 10)]});
+    }
+    now = at(10, 21);
+    await repo.refreshStreak();
+    var streak = await db.select(db.streakStates).getSingle();
+    expect([streak.currentWeeks, streak.longestWeeks], equals([3, 3]));
+
+    // Three weeks later nothing has been logged: the current streak is over.
+    now = at(11, 16);
+    await repo.refreshStreak();
+    streak = await db.select(db.streakStates).getSingle();
+    expect([streak.currentWeeks, streak.longestWeeks], equals([0, 3]));
   });
 }

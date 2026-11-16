@@ -50,6 +50,11 @@ class AppDatabase extends _$AppDatabase {
           await customStatement('PRAGMA foreign_keys = ON');
           // Write-ahead logging: faster writes, readers don't block the writer.
           await customStatement('PRAGMA journal_mode = WAL');
+          // With WAL, NORMAL is the recommended setting: the database can never
+          // be corrupted, and a power cut at the worst moment can lose only the
+          // last moment's commits, not older ones. It avoids a disk sync on
+          // every set saved.
+          await customStatement('PRAGMA synchronous = NORMAL');
         },
       );
 

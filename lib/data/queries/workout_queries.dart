@@ -126,6 +126,9 @@ class WorkoutQueries {
   WorkoutQueries(this.db);
   final AppDatabase db;
 
+  /// Most suggestion messages one day shows (requirements FR-22).
+  static const int maxMessages = 3;
+
   /// Emits once, then again after every committed change to [tables].
   Stream<T> _watch<T>(
     Future<T> Function() load,
@@ -166,12 +169,21 @@ class WorkoutQueries {
     }
 
     final nameByLog = {for (final v in views) v.log.id: v.exercise.name};
+    final orderByLog = {
+      for (var i = 0; i < views.length; i++) views[i].log.id: i,
+    };
     final rows = await (db.select(db.suggestions)
-          ..where((t) => t.sessionId.equals(session.id))
-          ..orderBy([(t) => OrderingTerm.asc(t.priority)]))
+          ..where((t) => t.sessionId.equals(session.id)))
         .get();
+    // Best priority first, ties in exercise order. A day shows at most three.
+    rows.sort((a, b) {
+      final byPriority = a.priority.compareTo(b.priority);
+      if (byPriority != 0) return byPriority;
+      return (orderByLog[a.exerciseLogId] ?? 999)
+          .compareTo(orderByLog[b.exerciseLogId] ?? 999);
+    });
     final messages = [
-      for (final r in rows)
+      for (final r in rows.take(maxMessages))
         suggestionMessage(SuggestionHit(
           ruleId: r.ruleId,
           priority: r.priority,

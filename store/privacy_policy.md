@@ -2,7 +2,7 @@
 
 Effective date: [DATE]
 
-TonFit ("the app") is a workout log published by [YOUR NAME OR COMPANY]. This policy explains what the app does with your information. In short: your workout data stays on your device.
+TonFit ("the app") is a workout log published by Carl Anthony L. Peña. This policy explains what the app does with your information. In short: your workout data stays on your device.
 
 ## What the app stores
 - The workouts you enter: programs, exercises, sets, weights, repetitions, durations, session times and rest days.
@@ -32,4 +32,4 @@ The app is a general fitness log and is not directed at children under 13. We do
 If this policy changes, the new version will be published at the same address with a new effective date.
 
 ## Contact
-[YOUR EMAIL ADDRESS]
+carlanthonypenaa@gmail.com
