@@ -3,4 +3,4 @@ const String appVersion = '1.0.0';
 
 /// Where the privacy policy is published (required by Google Play). While this
 /// is empty the Settings screen shows no link; set it before you publish.
-const String privacyPolicyUrl = '';
+const String privacyPolicyUrl = 'https://crimsondonut.github.io/TonFit/';
