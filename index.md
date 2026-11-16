@@ -1,6 +1,6 @@
 # TonFit Privacy Policy
 
-Effective date: [DATE]
+Effective date: November 11, 2026
 
 TonFit ("the app") is a workout log published by Carl Anthony L. Peña. This policy explains what the app does with your information. In short: your workout data stays on your device.
 
